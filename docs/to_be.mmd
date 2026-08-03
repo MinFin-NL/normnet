@@ -1,0 +1,64 @@
+flowchart LR
+    p_intake(("Claim submitted ●"))
+    p_registered(("Claim registered"))
+    p_await_docs(("Awaiting documents"))
+    p_docs_ok(("Documents complete"))
+    p_fraud_todo(("Fraud check pending"))
+    p_cover_todo(("Coverage check pending"))
+    p_fraud_done(("Fraud check done"))
+    p_cover_done(("Coverage check done"))
+    p_assessed(("Assessment complete"))
+    p_approved(("Approved"))
+    p_rejected(("Rejected"))
+    p_paid(("Refund issued"))
+    p_closed(("Case closed"))
+    t_register["Register & triage claim<br/><i>intake_agent</i>"]
+    t_auto_resolve["Auto-settle low-value claim<br/><i>triage_agent</i>"]
+    t_request_docs["Request documents<br/><i>intake_agent</i>"]
+    t_docs_received["Accept documents<br/><i>evidence_agent</i>"]
+    t_docs_rejected["Documents incomplete → ask again<br/><i>evidence_agent</i>"]
+    t_split_checks["Open fraud + coverage checks<br/><i>orchestrator</i>"]
+    t_fraud_check["Fraud check<br/><i>fraud_agent</i>"]
+    t_coverage_check["Warranty coverage check<br/><i>coverage_agent</i>"]
+    t_assess["Assess claim<br/><i>assessor_agent</i>"]
+    t_approve["Approve<br/><i>assessor_agent</i>"]
+    t_reject["Reject<br/><i>assessor_agent</i>"]
+    t_issue_refund["Issue refund<br/><i>payment_agent</i>"]
+    t_close_paid["Notify customer & close<br/><i>comms_agent</i>"]
+    t_close_rejected["Send rejection & close<br/><i>comms_agent</i>"]
+    p_intake --> t_register
+    t_register --> p_registered
+    p_registered --> t_auto_resolve
+    t_auto_resolve --> p_approved
+    p_registered --> t_request_docs
+    t_request_docs --> p_await_docs
+    p_await_docs --> t_docs_received
+    t_docs_received --> p_docs_ok
+    p_await_docs --> t_docs_rejected
+    t_docs_rejected --> p_registered
+    p_docs_ok --> t_split_checks
+    t_split_checks --> p_fraud_todo
+    t_split_checks --> p_cover_todo
+    p_fraud_todo --> t_fraud_check
+    t_fraud_check --> p_fraud_done
+    p_cover_todo --> t_coverage_check
+    t_coverage_check --> p_cover_done
+    p_fraud_done --> t_assess
+    p_cover_done --> t_assess
+    t_assess --> p_assessed
+    p_assessed --> t_approve
+    t_approve --> p_approved
+    p_assessed --> t_reject
+    t_reject --> p_rejected
+    p_approved --> t_issue_refund
+    t_issue_refund --> p_paid
+    p_paid --> t_close_paid
+    t_close_paid --> p_closed
+    p_rejected --> t_close_rejected
+    t_close_rejected --> p_closed
+    classDef marked fill:#2d6a4f,stroke:#95d5b2,color:#fff;
+    classDef auto fill:#1d3557,stroke:#a8dadc,color:#fff;
+    classDef hitl fill:#7f4f24,stroke:#ffd6a5,color:#fff;
+    class p_intake marked;
+    class t_register,t_auto_resolve,t_request_docs,t_docs_received,t_docs_rejected,t_split_checks,t_fraud_check,t_coverage_check,t_assess,t_issue_refund,t_close_paid,t_close_rejected auto;
+    class t_approve,t_reject hitl;

@@ -1,0 +1,6 @@
+# The Petri net engine (petrinet/) has no dependencies. These are for the
+# LangGraph execution layer and the optional LLM decision backends.
+langgraph>=1.0
+langchain-anthropic>=0.3   # --backend anthropic
+langchain-ollama>=0.2      # --backend ollama (optional)
+pytest>=8                  # tests only
