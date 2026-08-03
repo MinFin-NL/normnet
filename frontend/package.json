@@ -4,7 +4,7 @@
   "description": "NormNet inspector — step-by-step view of an agentic business process",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k -n api,web -c blue,green \"uv run --directory .. uvicorn server.app:app --reload --port 8000\" \"vite\"",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview"
   },
@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.2.4",
     "typescript": "^5.7.2",
     "vite": "^5.4.14",
     "vue-tsc": "^2.2.0"

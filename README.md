@@ -31,9 +31,9 @@ Anthropic's [Petri](https://www.anthropic.com/research/petri-open-source-auditin
 > opinion. See [`audit/petri_audit.py`](audit/petri_audit.py).
 
 ```bash
-python run_demo.py            # full walkthrough in the terminal, no API key needed
+uv run run_demo.py            # full walkthrough in the terminal, no API key needed
 ./run_ui.sh                   # web inspector — watch it step by step
-python -m pytest tests/ -q    # 73 tests
+uv run pytest tests/ -q       # 73 tests
 ```
 
 ---
@@ -265,8 +265,8 @@ human-in-the-loop control and a rubber stamp.
 ### Running it
 
 ```bash
-./run_ui.sh          # builds the frontend if needed, serves everything on :8000
-./run_ui.sh --dev    # API on :8000 + Vite hot reload on :5173
+./run_ui.sh                    # builds the frontend if needed, serves everything on :8000
+cd frontend && npm run dev     # hot reload on :5173, starts the API on :8000 alongside it
 ```
 
 The API is small — `server/app.py` is five endpoints. Events are append-only and
@@ -323,7 +323,7 @@ frontend/               Vue 3 + NL Design System (RVO) inspector
 run_demo.py             the six-section walkthrough
 run_ui.sh               start the inspector
 docs/LPPN.md            the paper, what's implemented, and what isn't
-docs/*.mmd              generated diagrams (`python run_demo.py --mermaid`)
+docs/*.mmd              generated diagrams (`uv run run_demo.py --mermaid`)
 ```
 
 `petrinet/` has no dependencies at all — both halves of the engine are plain
@@ -340,13 +340,17 @@ Python and could be lifted out on their own.
 
 ## Install
 
+Dependencies are managed with [uv](https://docs.astral.sh/uv/); `pyproject.toml`
+and `uv.lock` pin the whole set.
+
 ```bash
-pip install langgraph langchain-ollama   # langchain-ollama only needed for the LLM path
+uv sync          # create .venv and install everything, locked
+uv run <cmd>     # run inside it — no activation needed
 ```
 
-Installing into a virtualenv is worth it here — `langgraph` pulls a recent
-`langchain-core`, which can conflict with older `langchain` packages already on
-the system.
+`uv sync` also handles the dev group (`pytest`). The Petri net engine
+(`petrinet/`) itself has no dependencies at all; the rest are for the LangGraph
+execution layer, the Ollama backend, and the inspector.
 
 ## Extending it
 

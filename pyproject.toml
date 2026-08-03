@@ -1,0 +1,24 @@
+[project]
+name = "normnet"
+version = "0.1.0"
+description = "Petri-net-backed modelling, LangGraph execution, and Petri-style auditing of an agentic process."
+readme = "README.md"
+requires-python = ">=3.11"
+
+# The Petri net engine (petrinet/) has no dependencies at all. These are for
+# the LangGraph execution layer, the optional LLM backends, and the inspector.
+dependencies = [
+    "langgraph>=1.0",
+    "langchain-ollama>=0.2",  # --backend ollama (the only LLM backend; fully local)
+    # Inspector backend (server/). Only needed for the web UI, not for run_demo.py.
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+# An application, not a distributable library: uv manages the environment but
+# does not build or install the project itself.
+[tool.uv]
+package = false
