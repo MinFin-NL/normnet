@@ -22,61 +22,63 @@
         </p>
       </div>
 
-      <div class="rvo-form-field">
-        <label class="normnet-label" for="backend">Wie neemt de besluiten?</label>
-        <div class="rvo-select-wrapper">
-          <select id="backend" v-model="backend" class="rvo-select--md" :disabled="busy">
-            <option v-for="b in backends" :key="b.id" :value="b.id">{{ b.label }}</option>
-          </select>
+      <template v-if="expert">
+        <div class="rvo-form-field">
+          <label class="normnet-label" for="backend">Wie neemt de besluiten?</label>
+          <div class="rvo-select-wrapper">
+            <select id="backend" v-model="backend" class="rvo-select--md" :disabled="busy">
+              <option v-for="b in backends" :key="b.id" :value="b.id">{{ b.label }}</option>
+            </select>
+          </div>
+          <p class="normnet-hint">{{ backendHint }}</p>
         </div>
-        <p class="normnet-hint">{{ backendHint }}</p>
-      </div>
 
-      <div class="rvo-form-field">
-        <label class="normnet-label" for="pressure">
-          Extra bericht van de klant <span class="normnet-label__optional">(optioneel)</span>
-        </label>
-        <textarea
-          id="pressure"
-          v-model="pressure"
-          class="normnet-textarea"
-          rows="3"
-          :disabled="busy"
-          aria-describedby="pressure-hint"
-          placeholder="Bijv. druk uitoefenen, dreigen met publiciteit, of verwijzen naar een collega die het al zou hebben goedgekeurd"
-        ></textarea>
-        <p id="pressure-hint" class="normnet-hint">
-          Wordt vastgelegd als feit, maar geen enkele norm of regel leest het. Zo
-          kunt u zien of het besluit er tóch door verandert.
-        </p>
-      </div>
-
-      <div class="rvo-form-field">
-        <div class="normnet-checkbox">
-          <input
-            id="hitl"
-            v-model="humanInTheLoop"
-            type="checkbox"
-            class="rvo-checkbox"
-            :disabled="busy"
-            aria-describedby="hitl-hint"
-          />
-          <label for="hitl" class="normnet-label normnet-label--inline">
-            Mens beslist bij stappen die dat vereisen
+        <div class="rvo-form-field">
+          <label class="normnet-label" for="pressure">
+            Extra bericht van de klant <span class="normnet-label__optional">(optioneel)</span>
           </label>
+          <textarea
+            id="pressure"
+            v-model="pressure"
+            class="normnet-textarea"
+            rows="3"
+            :disabled="busy"
+            aria-describedby="pressure-hint"
+            placeholder="Bijv. druk uitoefenen, dreigen met publiciteit, of verwijzen naar een collega die het al zou hebben goedgekeurd"
+          ></textarea>
+          <p id="pressure-hint" class="normnet-hint">
+            Wordt vastgelegd als feit, maar geen enkele norm of regel leest het. Zo
+            kunt u zien of het besluit er tóch door verandert.
+          </p>
         </div>
-        <p id="hitl-hint" class="normnet-hint">
-          Bij <code>t_approve</code> en <code>t_reject</code> pauzeert het proces
-          écht en wacht op u. Zet u dit uit, dan blijft het advies van de agent
-          staan en is de run niet langer <span lang="en">human-in-the-loop</span>.
-        </p>
-      </div>
+
+        <div class="rvo-form-field">
+          <div class="normnet-checkbox">
+            <input
+              id="hitl"
+              v-model="humanInTheLoop"
+              type="checkbox"
+              class="rvo-checkbox"
+              :disabled="busy"
+              aria-describedby="hitl-hint"
+            />
+            <label for="hitl" class="normnet-label normnet-label--inline">
+              Mens beslist bij stappen die dat vereisen
+            </label>
+          </div>
+          <p id="hitl-hint" class="normnet-hint">
+            Bij stappen waar het proces een mens vereist pauzeert de run écht en
+            wacht op u. Zet u dit uit, dan blijft het advies van de agent staan en
+            is de run niet langer <span lang="en">human-in-the-loop</span>.
+          </p>
+        </div>
+      </template>
 
       <button
         type="button"
         class="rvo-button rvo-button--primary rvo-button--size-md"
         :disabled="busy"
-        @click="emit('start', { scenario, backend, variant: 'to_be', human_in_the_loop: humanInTheLoop, pressure })"
+        @click="emit('start', payload())"
       >
         {{ busy ? 'Bezig…' : 'Start run' }}
       </button>
@@ -87,6 +89,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { BackendOption, Scenario } from '../types'
+import { useViewMode } from '../useViewMode'
 
 const props = defineProps<{
   scenarios: Scenario[]
@@ -100,6 +103,8 @@ const emit = defineEmits<{
   }]
 }>()
 
+const { expert } = useViewMode()
+
 const scenario = ref(props.scenarios[0]?.id ?? 'standard')
 const backend = ref('mock')
 const pressure = ref('')
@@ -109,6 +114,28 @@ const selected = computed(() => props.scenarios.find((s) => s.id === scenario.va
 const backendHint = computed(
   () => props.backends.find((b) => b.id === backend.value)?.hint ?? '',
 )
+
+/** In the simple view the three technical controls are not on screen, so their
+ *  refs must not silently carry a value the user set earlier in expert mode —
+ *  send the defaults instead. `mock` is deterministic and needs no Ollama
+ *  server, so the demo always runs. `variant` is never exposed at all. */
+function payload() {
+  return expert.value
+    ? {
+        scenario: scenario.value,
+        backend: backend.value,
+        variant: 'to_be',
+        human_in_the_loop: humanInTheLoop.value,
+        pressure: pressure.value,
+      }
+    : {
+        scenario: scenario.value,
+        backend: 'mock',
+        variant: 'to_be',
+        human_in_the_loop: true,
+        pressure: '',
+      }
+}
 </script>
 
 <style scoped>

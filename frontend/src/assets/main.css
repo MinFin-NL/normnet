@@ -6,6 +6,9 @@
    RVO scopes its colour tokens to `.rvo-theme`, so aliases have to live in
    the same scope or they resolve to `initial` — usually rendering black.   */
 .rvo-theme {
+  /* Canonical primary, same as invulhulp: lintblauw, not hemelblauw. */
+  --rvo-color-primary: var(--rvo-color-lintblauw);
+
   --normnet-color-page-bg: var(--rvo-color-grijs-100);
   --normnet-color-surface: var(--rvo-color-wit);
   --normnet-color-border: var(--rvo-color-grijs-200);
@@ -39,6 +42,19 @@ body {
 .rvo-theme {
   background-color: var(--normnet-color-page-bg);
   min-block-size: 100vh;
+}
+
+/* Inverse buttons for dark backgrounds (used in AppHeader). */
+[data-rvo-on-dark] .rvo-button--secondary,
+[data-rvo-on-dark] .rvo-button--tertiary {
+  --utrecht-button-background-color: transparent;
+  --utrecht-button-color: var(--rvo-color-wit);
+  --utrecht-button-border-color: rgb(255 255 255 / 0.6);
+}
+[data-rvo-on-dark] .rvo-button--secondary:hover,
+[data-rvo-on-dark] .rvo-button--tertiary:hover {
+  --utrecht-button-background-color: rgb(255 255 255 / 0.12);
+  --utrecht-button-border-color: var(--rvo-color-wit);
 }
 
 /* Respect a user's reduced-motion preference (WCAG 2.3.3). */

@@ -1,5 +1,5 @@
 <template>
-  <div class="rvo-theme">
+  <div class="utrecht-document rvo-theme">
     <a class="normnet-skiplink" href="#main">Naar de hoofdinhoud</a>
     <AppHeader />
 
@@ -59,21 +59,30 @@
               Wat ziet u hier?
             </h2>
             <p>
-              NormNet voert een schadeclaimproces uit als petrinet. Elke stap die
-              vuurt verschijnt hieronder: welke agent hem uitvoerde, met welk
-              gereedschap, en wat er is vastgelegd.
+              NormNet handelt een schadeclaim af. Elke stap die het proces zet
+              verschijnt hieronder: wie hem uitvoerde, wat er is besloten en wat
+              er in het dossier is vastgelegd.
             </p>
             <p>
+              Bij een stap waar een mens moet beslissen stopt het proces en wacht
+              op u. Dat is geen animatie — er staat werkelijk een proces stil tot
+              u kiest.
+            </p>
+            <p v-if="expert">
               Bij een keuzepunt ziet u <strong>de volledige vraag aan het model</strong>
               — inclusief het normen-blok dat uit de normen is gegenereerd —
               naast het antwoord en de motivatie.
             </p>
-            <p>
-              Bij een stap die het net markeert als <code>human_in_loop</code> stopt
-              het proces en wacht op u. Dat is geen animatie: de achterliggende
-              thread staat stil tot u kiest.
+            <p v-else class="normnet-intro__more">
+              Wilt u zien wat er precies aan het model is gevraagd en waarop de
+              audit toetst? Zet <strong>Technische details</strong> aan, rechtsboven.
             </p>
             <p class="normnet-intro__cta">Kies links een casus en start een run.</p>
+            <p class="normnet-intro__credit">
+              Declaratieve laag naar Sileno (2020),
+              <span lang="en">Logic Programming Petri Nets</span>, Universiteit van
+              Amsterdam.
+            </p>
           </section>
 
           <!-- aria-live so new steps are announced while the run progresses -->
@@ -117,11 +126,13 @@ import TimelineItem from './components/TimelineItem.vue'
 import { api } from './api'
 import type { Bootstrap } from './types'
 import { useRun } from './useRun'
+import { useViewMode } from './useViewMode'
 
 const boot = ref<Bootstrap | null>(null)
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 const run = useRun()
+const { expert } = useViewMode()
 
 const violatedNormIds = computed(() => run.violations.value.map((v) => v.normId))
 
@@ -151,8 +162,10 @@ function onStart(payload: {
 </script>
 
 <style scoped>
+/* The footer is a fixed overlay strip; reserve its height plus breathing room
+   so the last card is never hidden behind it. */
 .normnet-main {
-  padding-block: 1.5rem;
+  padding-block: var(--rvo-space-md) var(--rvo-space-3xl, 3rem);
 }
 .normnet-layout {
   display: grid;
@@ -166,7 +179,9 @@ function onStart(payload: {
   gap: 1rem;
   position: sticky;
   top: 1rem;
-  max-block-size: calc(100vh - 2rem);
+  /* Leave room for the fixed footer strip, or the bottom of this column's own
+     scroll area sits behind it and can never be reached. */
+  max-block-size: calc(100vh - 2rem - 3rem);
   overflow-y: auto;
 }
 .normnet-timeline {
@@ -187,7 +202,16 @@ function onStart(payload: {
 }
 .normnet-intro__cta {
   font-weight: 700;
+}
+.normnet-intro__more {
+  color: var(--normnet-color-text-muted, #4b5563);
+}
+.normnet-intro__credit {
   margin-block-end: 0;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--normnet-color-border, #e2e8f0);
+  font-size: 0.8125rem;
+  color: var(--normnet-color-text-muted, #4b5563);
 }
 .normnet-connection {
   margin-block-end: 1rem;

@@ -5,10 +5,10 @@
     <article class="rvo-card rvo-card--outline rvo-card--padding-md normnet-card">
       <header class="normnet-card__head">
         <h3 class="normnet-card__title">
-          Besluit: {{ entry.decisionId }}
+          Besluit: {{ expert ? entry.decisionId : decisionLabel(entry.decisionId) }}
           <span class="normnet-card__round">ronde {{ entry.round }}</span>
         </h3>
-        <span class="rvo-tag rvo-tag--info rvo-tag--pill">{{ entry.backend }}</span>
+        <span v-if="expert" class="rvo-tag rvo-tag--info rvo-tag--pill">{{ entry.backend }}</span>
       </header>
 
       <p v-if="!entry.choice" class="normnet-card__pending">
@@ -18,28 +18,30 @@
       <template v-else>
         <p class="normnet-card__answer">
           <span class="normnet-card__answer-label">Gekozen</span>
-          <strong>{{ entry.choiceLabel }}</strong>
+          <strong>{{ netLabel(entry.choice ?? '', entry.choiceLabel) }}</strong>
           <span class="rvo-tag rvo-tag--pill normnet-card__meta">
             zekerheid {{ Math.round(entry.confidence * 100) }}%
           </span>
-          <span class="rvo-tag rvo-tag--pill normnet-card__meta">{{ entry.elapsedMs }} ms</span>
+          <span v-if="expert" class="rvo-tag rvo-tag--pill normnet-card__meta">
+            {{ entry.elapsedMs }} ms
+          </span>
         </p>
         <blockquote class="normnet-card__rationale">{{ entry.rationale }}</blockquote>
 
         <p v-if="entry.human" class="normnet-card__human">
           <template v-if="entry.human.overrode">
             <span class="rvo-tag rvo-tag--warning rvo-tag--pill">Door mens gewijzigd</span>
-            Een mens koos <strong>{{ entry.human.label }}</strong> in plaats van het
+            Een mens koos <strong>{{ netLabel(entry.human.choice, entry.human.label) }}</strong> in plaats van het
             advies van de agent.
           </template>
           <template v-else>
             <span class="rvo-tag rvo-tag--success rvo-tag--pill">Door mens bevestigd</span>
-            Een mens heeft <strong>{{ entry.human.label }}</strong> vastgesteld.
+            Een mens heeft <strong>{{ netLabel(entry.human.choice, entry.human.label) }}</strong> vastgesteld.
           </template>
         </p>
       </template>
 
-      <details class="rvo-expandable-content normnet-card__prompt">
+      <details v-if="expert" class="rvo-expandable-content normnet-card__prompt">
         <summary>Wat is er precies aan het model gevraagd?</summary>
         <div class="normnet-prompt">
           <h4 class="normnet-prompt__heading">Systeeminstructie</h4>
@@ -79,8 +81,8 @@
 
       <div v-for="t in entry.transitions" :key="t.id" class="normnet-transition">
         <div class="normnet-transition__head">
-          <span class="normnet-transition__label">{{ t.label }}</span>
-          <code class="normnet-transition__id">{{ t.id }}</code>
+          <span class="normnet-transition__label">{{ netLabel(t.id, t.label) }}</span>
+          <code v-if="expert" class="normnet-transition__id">{{ t.id }}</code>
           <span
             class="rvo-tag rvo-tag--pill"
             :class="t.autonomy === 'human_in_loop' ? 'rvo-tag--warning' : 'rvo-tag--success'"
@@ -91,17 +93,22 @@
         <p class="normnet-transition__actor">
           <span class="normnet-visually-hidden">Uitgevoerd door</span>
           {{ t.actor }}
-          <template v-if="t.tools.length">
+          <template v-if="expert && t.tools.length">
             · gereedschap:
             <code v-for="tool in t.tools" :key="tool">{{ tool }}</code>
           </template>
           · {{ formatHours(t.hours) }}
         </p>
         <p v-if="t.note" class="normnet-transition__note">{{ t.note }}</p>
-        <p v-if="Object.keys(t.factsLearned).length" class="normnet-transition__facts">
+        <p v-if="learnedFacts(t.factsLearned).length" class="normnet-transition__facts">
           <span class="normnet-transition__facts-label">Vastgelegd:</span>
-          <span v-for="(v, k) in t.factsLearned" :key="k" class="normnet-fact">
-            {{ k }} = {{ formatValue(v) }}
+          <span
+            v-for="[k, v] in learnedFacts(t.factsLearned)"
+            :key="k"
+            class="normnet-fact"
+            :class="{ 'normnet-fact--raw': expert }"
+          >
+            {{ expert ? k : factLabel(k) }}: {{ factValue(v) }}
           </span>
         </p>
       </div>
@@ -113,15 +120,19 @@
     <div class="normnet-item__marker normnet-item__marker--violation" aria-hidden="true">!</div>
     <article class="rvo-alert rvo-alert--error rvo-alert--padding-md normnet-card">
       <h3 class="normnet-card__title">
-        Norm {{ entry.normId }} geschonden
+        {{ expert ? `Norm ${entry.normId} geschonden` : 'Norm geschonden' }}
         <span class="rvo-tag rvo-tag--error rvo-tag--pill">
           {{ entry.kind === 'obligation' ? 'verplichting' : 'verbod' }}
         </span>
       </h3>
       <p class="normnet-card__violation">{{ entry.message }}</p>
-      <p class="normnet-card__violation-note">
+      <p v-if="expert" class="normnet-card__violation-note">
         Vastgesteld in ronde {{ entry.round }} door de declaratieve laag, tegen de
         <em>ground marking</em> — niet achteraf uit een logbestand afgeleid.
+      </p>
+      <p v-else class="normnet-card__violation-note">
+        Vastgesteld tijdens de run zelf, in ronde {{ entry.round }} — niet
+        achteraf uit een logbestand afgeleid.
       </p>
     </article>
   </li>
@@ -142,13 +153,13 @@
           <dt>Normen</dt>
           <dd>{{ entry.compliant ? 'geen schending' : 'geschonden' }}</dd>
         </div>
-        <div>
+        <div v-if="expert">
           <dt>Replay tegen het model</dt>
           <dd>{{ entry.replayOk ? 'geldig vuurspoor' : 'ONGELDIG' }}</dd>
         </div>
       </dl>
-      <p class="normnet-card__replay">{{ entry.replayMessage }}</p>
-      <details class="rvo-expandable-content">
+      <p v-if="expert" class="normnet-card__replay">{{ entry.replayMessage }}</p>
+      <details v-if="expert" class="rvo-expandable-content">
         <summary>Vuurspoor ({{ entry.firingSequence.length }} stappen)</summary>
         <ol class="normnet-sequence">
           <li v-for="(t, i) in entry.firingSequence" :key="`${t}-${i}`"><code>{{ t }}</code></li>
@@ -168,21 +179,24 @@
 </template>
 
 <script setup lang="ts">
+import { decisionLabel, factLabel, factValue, isKnownFact, netLabel } from '../labels'
 import type { TimelineEntry } from '../types'
+import { useViewMode } from '../useViewMode'
 
 defineProps<{ entry: TimelineEntry }>()
+
+const { expert } = useViewMode()
+
+function learnedFacts(facts: Record<string, unknown>): [string, unknown][] {
+  const entries = Object.entries(facts)
+  return expert.value ? entries : entries.filter(([key]) => isKnownFact(key))
+}
 
 function formatHours(h: number): string {
   if (h < 1 / 60) return `${Math.round(h * 3600)} s`
   if (h < 1) return `${Math.round(h * 60)} min`
   if (h < 48) return `${h.toFixed(1)} uur`
   return `${(h / 24).toFixed(1)} dagen`
-}
-
-function formatValue(v: unknown): string {
-  if (typeof v === 'boolean') return v ? 'ja' : 'nee'
-  if (v === null || v === undefined || v === '') return '—'
-  return String(v)
 }
 
 function outcomeLabel(outcome: string): string {
@@ -218,7 +232,7 @@ function outcomeLabel(outcome: string): string {
   margin-block-start: 0.5rem;
 }
 .normnet-item__marker--decision {
-  background: var(--rvo-color-donkerblauw, #01689b);
+  background: var(--rvo-color-lintblauw, #154273);
 }
 .normnet-item__marker--violation {
   background: var(--normnet-color-violation, #d52b1e);
@@ -335,11 +349,14 @@ code {
   color: var(--normnet-color-text-muted, #4b5563);
 }
 .normnet-fact {
-  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
   font-size: 0.75rem;
   background: var(--normnet-color-page-bg, #f1f5f9);
   padding: 0.1em 0.4em;
   border-radius: 2px;
+}
+/* Raw engine keys read as code; the Dutch labels do not. */
+.normnet-fact--raw {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
 .normnet-card__prompt {
   margin-block-start: 0.5rem;

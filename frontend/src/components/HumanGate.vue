@@ -11,18 +11,23 @@
       Het proces wacht op u
     </h2>
 
-    <p class="normnet-gate__lead">
+    <p v-if="expert" class="normnet-gate__lead">
       Stap <strong>{{ pending.decision_id }}</strong> in ronde
       <strong>{{ pending.round }}</strong> is in het net gemarkeerd als
       <code>human_in_loop</code>. De agent heeft het werk gedaan en een advies
       opgesteld; het besluit is aan u. Zolang u niets kiest, staat het proces
       daadwerkelijk stil.
     </p>
+    <p v-else class="normnet-gate__lead">
+      <strong>{{ stepLabel }}</strong> Hier beslist een mens. De agent heeft het
+      werk gedaan en een advies opgesteld; het besluit is aan u. Zolang u niets
+      kiest, staat het proces daadwerkelijk stil.
+    </p>
 
     <div class="normnet-gate__recommendation">
       <p class="normnet-gate__reco-label">Advies van de agent</p>
       <p class="normnet-gate__reco-choice">
-        {{ pending.labels[pending.recommendation] ?? pending.recommendation }}
+        {{ optionLabel(pending.recommendation) }}
         <span class="rvo-tag rvo-tag--info rvo-tag--pill normnet-gate__confidence">
           zekerheid {{ Math.round((pending.confidence ?? 0) * 100) }}%
         </span>
@@ -40,7 +45,7 @@
         :disabled="deciding"
         @click="emit('decide', option)"
       >
-        {{ pending.labels[option] ?? option }}
+        {{ optionLabel(option) }}
         <span v-if="option === pending.recommendation" class="normnet-visually-hidden">
           (dit is het advies van de agent)
         </span>
@@ -51,15 +56,15 @@
       Kiest u iets anders dan het advies, dan wordt dat vastgelegd als een
       <em>override</em>. De normen worden daarna net zo hard op uw besluit
       gecontroleerd als op dat van de agent — keurt u een claim buiten garantie
-      goed, dan schendt dat norm N2.
+      goed, dan is dat net zo goed een schending.
     </p>
 
     <details class="rvo-expandable-content normnet-gate__details">
       <summary>Waar baseert de agent zich op?</summary>
-      <dl class="normnet-facts">
-        <template v-for="(value, key) in pending.facts" :key="key">
-          <dt>{{ key }}</dt>
-          <dd>{{ format(value) }}</dd>
+      <dl class="normnet-facts" :class="{ 'normnet-facts--raw': expert }">
+        <template v-for="[key, value] in factEntries" :key="key">
+          <dt>{{ expert ? key : factLabel(key) }}</dt>
+          <dd>{{ factValue(value) }}</dd>
         </template>
       </dl>
     </details>
@@ -67,16 +72,28 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { decisionLabel, factLabel, factValue, isKnownFact, netLabel } from '../labels'
 import type { PendingDecision } from '../types'
+import { useViewMode } from '../useViewMode'
 
-defineProps<{ pending: PendingDecision; deciding: boolean }>()
+const props = defineProps<{ pending: PendingDecision; deciding: boolean }>()
 const emit = defineEmits<{ decide: [choice: string] }>()
 
-function format(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'boolean') return value ? 'ja' : 'nee'
-  return String(value)
+const { expert } = useViewMode()
+
+const stepLabel = computed(() => decisionLabel(props.pending.decision_id))
+
+/** The options are transition ids and `pending.labels` carries the net's English
+ *  label for each; both go through the Dutch map. */
+function optionLabel(id: string): string {
+  return netLabel(id, props.pending.labels[id] ?? id)
 }
+
+const factEntries = computed(() => {
+  const entries = Object.entries(props.pending.facts)
+  return expert.value ? entries : entries.filter(([key]) => isKnownFact(key))
+})
 </script>
 
 <style scoped>
@@ -141,8 +158,10 @@ function format(value: unknown): string {
   font-size: 0.8125rem;
 }
 .normnet-facts dt {
-  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
   color: var(--normnet-color-text-muted, #4b5563);
+}
+.normnet-facts--raw dt {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
 .normnet-facts dd {
   margin: 0;

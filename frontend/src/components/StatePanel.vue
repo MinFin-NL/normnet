@@ -8,9 +8,12 @@
       <h2 id="marking-heading" class="rvo-heading rvo-heading--margin-3 normnet-panel__title">
         Waar staat de zaak nu?
       </h2>
-      <p class="normnet-panel__intro">
+      <p v-if="expert" class="normnet-panel__intro">
         De <em>marking</em>: welke plaatsen een token bevatten. Dit ís de toestand
         van het proces — er is geen aparte statusvariabele.
+      </p>
+      <p v-else class="normnet-panel__intro">
+        De stappen die het proces nu heeft bereikt.
       </p>
       <ul class="normnet-places">
         <li
@@ -24,9 +27,9 @@
             :class="(marking[place.id] ?? 0) > 0 ? 'rvo-status-indicator--groen' : 'rvo-status-indicator--grijs'"
             aria-hidden="true"
           />
-          <span class="normnet-place__label">{{ place.label }}</span>
+          <span class="normnet-place__label">{{ netLabel(place.id, place.label) }}</span>
           <span v-if="(marking[place.id] ?? 0) > 0" class="normnet-place__state">
-            token aanwezig
+            {{ expert ? 'token aanwezig' : 'hier' }}
           </span>
           <span v-else class="normnet-visually-hidden">geen token</span>
         </li>
@@ -41,9 +44,13 @@
       <h2 id="norms-heading" class="rvo-heading rvo-heading--margin-3 normnet-panel__title">
         Normen
       </h2>
-      <p class="normnet-panel__intro">
+      <p v-if="expert" class="normnet-panel__intro">
         Eén object per norm: dit is tegelijk de instructie aan de agent, de
         controle tijdens de run en het criterium van de audit.
+      </p>
+      <p v-else class="normnet-panel__intro">
+        De regels waaraan dit proces zich moet houden. Ze gelden voor de agent én
+        voor u.
       </p>
       <ul class="normnet-norms">
         <li v-for="norm in norms" :key="norm.id" class="normnet-norm">
@@ -52,12 +59,13 @@
               class="rvo-tag rvo-tag--pill"
               :class="violatedIds.has(norm.id) ? 'rvo-tag--error' : 'rvo-tag--success'"
             >
-              {{ norm.id }}
+              {{ expert ? norm.id : (violatedIds.has(norm.id) ? 'geschonden' : 'in orde') }}
             </span>
             <span class="normnet-norm__kind">
               {{ norm.kind === 'obligation' ? 'verplichting' : 'verbod' }}
             </span>
             <span
+              v-if="expert"
               class="normnet-norm__status"
               :class="violatedIds.has(norm.id) ? 'normnet-norm__status--bad' : ''"
             >
@@ -65,7 +73,7 @@
             </span>
           </div>
           <p class="normnet-norm__guidance">{{ norm.guidance }}</p>
-          <code class="normnet-norm__body">:- {{ norm.body.join(', ') }}.</code>
+          <code v-if="expert" class="normnet-norm__body">:- {{ norm.body.join(', ') }}.</code>
         </li>
       </ul>
     </section>
@@ -77,15 +85,18 @@
       aria-labelledby="facts-heading"
     >
       <h2 id="facts-heading" class="rvo-heading rvo-heading--margin-3 normnet-panel__title">
-        Vastgelegde feiten
+        {{ expert ? 'Vastgelegde feiten' : 'Wat er in het dossier staat' }}
       </h2>
-      <dl class="normnet-factlist">
+      <dl class="normnet-factlist" :class="{ 'normnet-factlist--raw': expert }">
         <template v-for="[key, value] in factEntries" :key="key">
-          <dt>{{ key }}</dt>
-          <dd>{{ format(value) }}</dd>
+          <dt>{{ expert ? key : factLabel(key) }}</dt>
+          <dd>{{ factValue(value) }}</dd>
         </template>
       </dl>
-      <p v-if="'customer_pressure' in facts && facts.customer_pressure" class="normnet-panel__note">
+      <p
+        v-if="expert && 'customer_pressure' in facts && facts.customer_pressure"
+        class="normnet-panel__note"
+      >
         <strong>Let op:</strong> <code>customer_pressure</code> staat wél in het
         dossier, maar geen enkele regel of norm leest het. Verandert de uitkomst
         tóch, dan is dat precies wat de audit aantoont.
@@ -96,7 +107,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { factLabel, factValue, isKnownFact, netLabel } from '../labels'
 import type { NetShape, NormInfo } from '../types'
+import { useViewMode } from '../useViewMode'
 
 const props = defineProps<{
   net: NetShape
@@ -106,14 +119,17 @@ const props = defineProps<{
   violatedNormIds: string[]
 }>()
 
-const violatedIds = computed(() => new Set(props.violatedNormIds))
-const factEntries = computed(() => Object.entries(props.facts))
+const { expert } = useViewMode()
 
-function format(value: unknown): string {
-  if (typeof value === 'boolean') return value ? 'ja' : 'nee'
-  if (value === null || value === undefined || value === '') return '—'
-  return String(value)
-}
+const violatedIds = computed(() => new Set(props.violatedNormIds))
+
+/** In the simple view, only facts we have a Dutch label for. A new key added to
+ *  the engine then stays invisible here rather than leaking `some_new_key` into
+ *  a page meant for a non-technical reader. */
+const factEntries = computed(() => {
+  const entries = Object.entries(props.facts)
+  return expert.value ? entries : entries.filter(([key]) => isKnownFact(key))
+})
 </script>
 
 <style scoped>
@@ -220,9 +236,12 @@ code {
   font-size: 0.8125rem;
 }
 .normnet-factlist dt {
-  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
   color: var(--normnet-color-text-muted, #4b5563);
   word-break: break-word;
+}
+/* Raw engine keys read as code; the Dutch labels do not. */
+.normnet-factlist--raw dt {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
 .normnet-factlist dd {
   margin: 0;
