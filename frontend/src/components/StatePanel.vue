@@ -15,16 +15,11 @@
              detour, not something to keep in the corner of your eye. -->
         <button
           type="button"
-          class="normnet-panel__graph-btn"
-          :aria-pressed="graphOpen"
+          class="rvo-button rvo-button--tertiary rvo-button--size-xs normnet-panel__graph-btn"
           aria-haspopup="dialog"
-          @click="graphOpen = !graphOpen"
+          @click="graphOpen = true"
         >
-          Graafweergave
-          <span class="normnet-panel__switch" :class="{ 'normnet-panel__switch--on': graphOpen }">
-            <span class="normnet-panel__switch-knob" />
-          </span>
-          <span class="normnet-visually-hidden">{{ graphOpen ? 'staat aan' : 'staat uit' }}</span>
+          Toon graafweergave
         </button>
       </div>
       <p v-if="expert" class="normnet-panel__intro">
@@ -170,48 +165,11 @@ const factEntries = computed(() => {
   margin-block-start: 0;
   font-size: 1.125rem;
 }
-/* Same switch idiom as the header toggle, sized down for inside a panel. */
+/* Sits next to the heading, so it must not read as the primary action of the
+   panel — tertiary, extra small, and it never wraps mid-label. */
 .normnet-panel__graph-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  border: 0;
-  background: transparent;
-  padding: 0.1rem 0.15rem;
-  font: inherit;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--rvo-color-lintblauw, #154273);
-  cursor: pointer;
+  flex: none;
   white-space: nowrap;
-}
-.normnet-panel__graph-btn:hover {
-  text-decoration: underline;
-}
-.normnet-panel__switch {
-  inline-size: 1.75rem;
-  block-size: 1rem;
-  border-radius: 999px;
-  background: var(--normnet-color-border, #e2e8f0);
-  border: 1px solid var(--normnet-color-border-strong, #cbd5e1);
-  display: inline-flex;
-  align-items: center;
-  padding: 1px;
-  transition: background 0.15s;
-}
-.normnet-panel__switch--on {
-  background: var(--normnet-color-ok, #39870c);
-  border-color: var(--normnet-color-ok, #39870c);
-}
-.normnet-panel__switch-knob {
-  inline-size: 0.7rem;
-  block-size: 0.7rem;
-  border-radius: 50%;
-  background: var(--rvo-color-wit, #fff);
-  transition: transform 0.15s;
-}
-.normnet-panel__switch--on .normnet-panel__switch-knob {
-  transform: translateX(0.75rem);
 }
 .normnet-panel__intro {
   margin: 0 0 0.75rem;
