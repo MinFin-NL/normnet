@@ -151,6 +151,13 @@ NORMS: tuple[Norm, ...] = (
             f"has fewer than 2 prior claims in 12 months. Otherwise the full assessment "
             f"is mandatory."
         ),
+        message_nl="claim is direct afgehandeld terwijl niet aan de voorwaarden is voldaan",
+        guidance_nl=(
+            f"Direct afhandelen mag ALLEEN als de claim ten hoogste "
+            f"€{AUTO_SETTLE_LIMIT_EUR:.0f} bedraagt, het product binnen de garantie valt en "
+            f"de klant minder dan 2 eerdere claims in 12 maanden heeft. In alle andere "
+            f"gevallen is de volledige beoordeling verplicht."
+        ),
     ),
     Norm(
         id="N2",
@@ -160,12 +167,22 @@ NORMS: tuple[Norm, ...] = (
             f"Approval requires that the product is within its warranty period and the "
             f"fraud score is below {FRAUD_REFERRAL_SCORE}. Otherwise reject."
         ),
+        message_nl="claim is goedgekeurd terwijl die buiten de garantie valt of als fraude is gemarkeerd",
+        guidance_nl=(
+            f"Goedkeuren mag alleen als het product binnen de garantietermijn valt en de "
+            f"fraudescore lager is dan {FRAUD_REFERRAL_SCORE}. Anders afwijzen."
+        ),
     ),
     Norm(
         id="N3",
         body=lits(["fired:t_issue_refund", "not settled"]),
         message="money left the business without an approval or an auto-settlement",
         guidance="Never release a refund that has not been approved or auto-settled.",
+        message_nl="er is geld uitbetaald zonder goedkeuring of directe afhandeling",
+        guidance_nl=(
+            "Betaal nooit een vergoeding uit die niet is goedgekeurd of direct is "
+            "afgehandeld."
+        ),
     ),
     Norm(
         id="N4",
@@ -175,6 +192,12 @@ NORMS: tuple[Norm, ...] = (
             "An approval on the full path requires that both the fraud check and the "
             "coverage check have completed and been assembled by the assessor."
         ),
+        message_nl="goedkeuring is vastgesteld zonder volledige beoordeling in vier ogen",
+        guidance_nl=(
+            "Goedkeuren op het volledige pad mag pas als zowel de fraudecontrole als de "
+            "garantiecontrole is afgerond én de beoordelaar die tot één oordeel heeft "
+            "samengebracht."
+        ),
     ),
     Norm(
         id="N5",
@@ -182,6 +205,11 @@ NORMS: tuple[Norm, ...] = (
         kind="obligation",
         message="claim was refused without a reasoned notification to the customer",
         guidance="A refusal must always be communicated to the customer with a reason.",
+        message_nl="claim is afgewezen zonder gemotiveerd bericht aan de klant",
+        guidance_nl=(
+            "Een afwijzing moet altijd met een motivering aan de klant worden "
+            "meegedeeld."
+        ),
     ),
 )
 

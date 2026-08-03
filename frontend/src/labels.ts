@@ -82,12 +82,90 @@ const NET_LABELS: Record<string, string> = {
   t_close_rejected: 'Afwijzing versturen en afsluiten',
 }
 
+/** Who does the work. The net names its actors with agent ids (`intake_agent`)
+ *  or, in the as-is model, with English department names — neither is something
+ *  to put in front of a reader. */
+const ACTOR_LABELS: Record<string, string> = {
+  intake_agent: 'Intake-agent',
+  triage_agent: 'Triage-agent',
+  evidence_agent: 'Bewijs-agent',
+  orchestrator: 'Orkestrator',
+  fraud_agent: 'Fraude-agent',
+  coverage_agent: 'Garantie-agent',
+  assessor_agent: 'Beoordelings-agent',
+  payment_agent: 'Betaal-agent',
+  comms_agent: 'Communicatie-agent',
+  // as-is owners, for completeness — the inspector shows the to-be net
+  'Service desk': 'Servicedesk',
+  'Claims lead': 'Teamleider claims',
+  'Fraud analyst': 'Fraudeanalist',
+  'Warranty specialist': 'Garantiespecialist',
+  'Claims manager': 'Claimsmanager',
+  Finance: 'Financiën',
+}
+
+export function actorLabel(actor: string): string {
+  return ACTOR_LABELS[actor] ?? actor
+}
+
+/** The process as a reader follows it: the *activities*, in order.
+ *
+ *  Deliberately keyed on transitions rather than places. A place is a state the
+ *  case sits in ("documenten compleet"); a reader asking "welke stap gebeurt
+ *  er nu?" means the work, and the work is a transition. Steps in the same
+ *  `phase` happen together (the two checks) or are alternatives to one another
+ *  (goedkeuren / afwijzen) — that is what makes it possible to say that a step
+ *  was *overgeslagen* rather than leaving it hanging as "nog te doen" forever.
+ *
+ *  `t_split_checks` has no entry: it is bookkeeping for the AND-split, not a
+ *  step anyone performs. */
+export interface ProcessStep {
+  key: string
+  label: string
+  /** firing any of these completes the step */
+  transitions: string[]
+  /** steps that happen at the same point in the process share a phase */
+  phase: number
+  /** `parallel`: happens alongside its phase siblings.
+   *  `branch`: only one of its phase siblings is taken. */
+  kind?: 'parallel' | 'branch'
+}
+
+export const PROCESS_STEPS: readonly ProcessStep[] = [
+  { key: 'register', label: 'Claim registreren en triëren', transitions: ['t_register'], phase: 1 },
+  { key: 'auto', label: 'Direct afhandelen', transitions: ['t_auto_resolve'], phase: 2, kind: 'branch' },
+  { key: 'docs', label: 'Documenten opvragen', transitions: ['t_request_docs'], phase: 2, kind: 'branch' },
+  { key: 'docs_check', label: 'Documenten beoordelen', transitions: ['t_docs_received'], phase: 3 },
+  { key: 'fraud', label: 'Fraudecontrole', transitions: ['t_fraud_check'], phase: 4, kind: 'parallel' },
+  { key: 'coverage', label: 'Garantiecontrole', transitions: ['t_coverage_check'], phase: 4, kind: 'parallel' },
+  { key: 'assess', label: 'Claim beoordelen', transitions: ['t_assess'], phase: 5 },
+  { key: 'approve', label: 'Goedkeuren', transitions: ['t_approve'], phase: 6, kind: 'branch' },
+  { key: 'reject', label: 'Afwijzen', transitions: ['t_reject'], phase: 6, kind: 'branch' },
+  { key: 'pay', label: 'Vergoeding uitbetalen', transitions: ['t_issue_refund'], phase: 7 },
+  { key: 'close', label: 'Klant informeren en afsluiten', transitions: ['t_close_paid', 't_close_rejected'], phase: 8 },
+]
+
 /** Decision points (`agentic/handlers.py: DECISION_POINTS`) are named for the
  *  choice they represent, not for a transition, so they are not in NET_LABELS. */
 const DECISION_LABELS: Record<string, string> = {
   documents_sufficient: 'Zijn de documenten voldoende?',
   settle_or_assess: 'Direct afhandelen of volledig beoordelen?',
   approve_or_reject: 'Goedkeuren of afwijzen?',
+}
+
+/** Short Dutch names for the scenarios. The API sends the full claim — id,
+ *  English product name and amount — which is far too long for the select in a
+ *  24rem sidebar: it pushed the control past the edge of the panel. The details
+ *  are shown under the select instead, where they can wrap. */
+const SCENARIO_LABELS: Record<string, string> = {
+  standard: 'Koptelefoon',
+  micro: 'USB-C-kabel',
+  out_of_warranty: 'Monitor',
+  pressure: 'Laptoplader',
+}
+
+export function scenarioLabel(id: string, fallback: string): string {
+  return SCENARIO_LABELS[id] ?? fallback
 }
 
 /** Dutch name for a place or transition, falling back to whatever the API sent. */

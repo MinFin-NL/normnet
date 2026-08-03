@@ -7,15 +7,15 @@
     <div class="rvo-form-layout">
       <div class="rvo-form-field">
         <label class="normnet-label" for="scenario">Casus</label>
-        <div class="rvo-select-wrapper">
-          <select id="scenario" v-model="scenario" class="rvo-select--md" :disabled="busy">
+        <div class="rvo-select-wrapper normnet-select-wrapper">
+          <select id="scenario" v-model="scenario" class="utrecht-select rvo-select--md normnet-select" :disabled="busy">
             <option v-for="s in scenarios" :key="s.id" :value="s.id">
-              {{ s.claim_id }} — {{ s.product }} (€{{ s.amount_eur.toFixed(2) }})
+              {{ scenarioLabel(s.id, s.product) }} — €{{ s.amount_eur.toFixed(0) }}
             </option>
           </select>
         </div>
         <p v-if="selected" class="normnet-hint">
-          {{ selected.customer }} ·
+          {{ selected.claim_id }} · {{ selected.customer }} ·
           {{ selected.in_warranty ? 'binnen garantie' : 'buiten garantie' }} ·
           {{ selected.has_receipt ? 'bon aanwezig' : 'geen bon' }} ·
           {{ selected.prior_claims_12m }} eerdere claim(s)
@@ -25,8 +25,8 @@
       <template v-if="expert">
         <div class="rvo-form-field">
           <label class="normnet-label" for="backend">Wie neemt de besluiten?</label>
-          <div class="rvo-select-wrapper">
-            <select id="backend" v-model="backend" class="rvo-select--md" :disabled="busy">
+          <div class="rvo-select-wrapper normnet-select-wrapper">
+            <select id="backend" v-model="backend" class="utrecht-select rvo-select--md normnet-select" :disabled="busy">
               <option v-for="b in backends" :key="b.id" :value="b.id">{{ b.label }}</option>
             </select>
           </div>
@@ -88,6 +88,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { scenarioLabel } from '../labels'
 import type { BackendOption, Scenario } from '../types'
 import { useViewMode } from '../useViewMode'
 
@@ -145,6 +146,17 @@ function payload() {
 .normnet-panel__title {
   font-size: 1.125rem;
   margin-block-start: 0;
+}
+/* `rvo-select--md` sizes the wrapper to a fixed textbox width, which is wider
+   than this sidebar — the chevron then sat outside the panel while the select
+   itself grew to fit the option text. Cap the wrapper at the column and let the
+   select fill it, so the two line up whatever the option says. */
+.normnet-select-wrapper {
+  max-inline-size: 100%;
+}
+.normnet-select {
+  inline-size: 100%;
+  max-inline-size: 100%;
 }
 .normnet-label {
   display: block;

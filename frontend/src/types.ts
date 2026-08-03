@@ -64,12 +64,23 @@ export interface Bootstrap {
   nets: Record<string, NetShape>
 }
 
+export interface TransitionActivity {
+  /** dispatched in the current round and not finished yet */
+  busy?: boolean
+  fired: boolean
+  /** what the step produced, in Dutch (`Outcome.note_nl`) */
+  note: string
+  actor: string
+}
+
 export interface PendingDecision {
   round: number
   decision_id: string
   options: string[]
   recommendation: string
   rationale: string
+  /** the agent's reasoning in Dutch; empty for a backend that only wrote English */
+  rationale_nl?: string
   confidence: number
   labels: Record<string, string>
   gated: string[]

@@ -152,6 +152,13 @@ class Norm:
     kind: str = "prohibition"  # or "obligation"
     #: prose rendered into the agent's instructions — the same norm, in words
     guidance: str = ""
+    #: Dutch renderings of `guidance` and `message`, for the UI. They live on
+    #: the norm rather than in a translation table in the frontend so that the
+    #: constraint, the words the agent reads and the words a citizen reads all
+    #: stay in one object — a reviewer checks all three in one glance. The
+    #: engine, the CLI and the prompts keep using the English fields.
+    guidance_nl: str = ""
+    message_nl: str = ""
 
     def violated(self, derived: set[str]) -> bool:
         return all(b.holds(derived) for b in self.body)

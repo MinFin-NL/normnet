@@ -5,35 +5,46 @@
       class="rvo-card rvo-card--outline rvo-card--padding-md normnet-panel"
       aria-labelledby="marking-heading"
     >
-      <h2 id="marking-heading" class="rvo-heading rvo-heading--margin-3 normnet-panel__title">
-        Waar staat de zaak nu?
-      </h2>
+      <div class="normnet-panel__head">
+        <h2 id="marking-heading" class="rvo-heading rvo-heading--margin-3 normnet-panel__title">
+          Waar staat de zaak nu?
+        </h2>
+        <!-- The list answers "hoe ver is het?"; the graph answers "hoe hangt
+             het samen?". A dialog rather than a second column: the whole net
+             does not fit next to a 24rem panel and reading it is a deliberate
+             detour, not something to keep in the corner of your eye. -->
+        <button
+          type="button"
+          class="normnet-panel__graph-btn"
+          :aria-pressed="graphOpen"
+          aria-haspopup="dialog"
+          @click="graphOpen = !graphOpen"
+        >
+          Graafweergave
+          <span class="normnet-panel__switch" :class="{ 'normnet-panel__switch--on': graphOpen }">
+            <span class="normnet-panel__switch-knob" />
+          </span>
+          <span class="normnet-visually-hidden">{{ graphOpen ? 'staat aan' : 'staat uit' }}</span>
+        </button>
+      </div>
       <p v-if="expert" class="normnet-panel__intro">
-        De <em>marking</em>: welke plaatsen een token bevatten. Dit ís de toestand
-        van het proces — er is geen aparte statusvariabele.
+        Afgeleid uit de <em>marking</em> en het vuurspoor: welke transitie draait,
+        welke hebben gevuurd. Dit ís de toestand van het proces — er is geen
+        aparte statusvariabele.
       </p>
       <p v-else class="normnet-panel__intro">
-        De stappen die het proces nu heeft bereikt.
+        Welke stap nu wordt uitgevoerd, wat er al af is en wat nog volgt.
       </p>
-      <ul class="normnet-places">
-        <li
-          v-for="place in net.places"
-          :key="place.id"
-          class="normnet-place"
-          :class="{ 'normnet-place--marked': (marking[place.id] ?? 0) > 0 }"
-        >
-          <span
-            class="rvo-status-indicator"
-            :class="(marking[place.id] ?? 0) > 0 ? 'rvo-status-indicator--groen' : 'rvo-status-indicator--grijs'"
-            aria-hidden="true"
-          />
-          <span class="normnet-place__label">{{ netLabel(place.id, place.label) }}</span>
-          <span v-if="(marking[place.id] ?? 0) > 0" class="normnet-place__state">
-            {{ expert ? 'token aanwezig' : 'hier' }}
-          </span>
-          <span v-else class="normnet-visually-hidden">geen token</span>
-        </li>
-      </ul>
+
+      <ProcessTracker :activity="activity" :gated="gated" />
+
+      <ProcessGraph
+        v-model:open="graphOpen"
+        :net="net"
+        :marking="marking"
+        :activity="activity"
+        :gated="gated"
+      />
     </section>
 
     <!-- Norm status -->
@@ -106,20 +117,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { factLabel, factValue, isKnownFact, netLabel } from '../labels'
-import type { NetShape, NormInfo } from '../types'
+import { computed, ref } from 'vue'
+import ProcessGraph from './ProcessGraph.vue'
+import ProcessTracker from './ProcessTracker.vue'
+import { factLabel, factValue, isKnownFact } from '../labels'
+import type { NetShape, NormInfo, TransitionActivity } from '../types'
 import { useViewMode } from '../useViewMode'
 
 const props = defineProps<{
   net: NetShape
   marking: Record<string, number>
+  activity: Record<string, TransitionActivity>
+  /** transitions the run is blocked on, waiting for a person */
+  gated: string[]
   norms: NormInfo[]
   facts: Record<string, unknown>
   violatedNormIds: string[]
 }>()
 
 const { expert } = useViewMode()
+
+const graphOpen = ref(false)
 
 const violatedIds = computed(() => new Set(props.violatedNormIds))
 
@@ -141,9 +159,59 @@ const factEntries = computed(() => {
 .normnet-panel {
   background-color: var(--normnet-color-surface, #fff);
 }
+.normnet-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 .normnet-panel__title {
   margin-block-start: 0;
   font-size: 1.125rem;
+}
+/* Same switch idiom as the header toggle, sized down for inside a panel. */
+.normnet-panel__graph-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  background: transparent;
+  padding: 0.1rem 0.15rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--rvo-color-lintblauw, #154273);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.normnet-panel__graph-btn:hover {
+  text-decoration: underline;
+}
+.normnet-panel__switch {
+  inline-size: 1.75rem;
+  block-size: 1rem;
+  border-radius: 999px;
+  background: var(--normnet-color-border, #e2e8f0);
+  border: 1px solid var(--normnet-color-border-strong, #cbd5e1);
+  display: inline-flex;
+  align-items: center;
+  padding: 1px;
+  transition: background 0.15s;
+}
+.normnet-panel__switch--on {
+  background: var(--normnet-color-ok, #39870c);
+  border-color: var(--normnet-color-ok, #39870c);
+}
+.normnet-panel__switch-knob {
+  inline-size: 0.7rem;
+  block-size: 0.7rem;
+  border-radius: 50%;
+  background: var(--rvo-color-wit, #fff);
+  transition: transform 0.15s;
+}
+.normnet-panel__switch--on .normnet-panel__switch-knob {
+  transform: translateX(0.75rem);
 }
 .normnet-panel__intro {
   margin: 0 0 0.75rem;
@@ -153,37 +221,6 @@ const factEntries = computed(() => {
 .normnet-panel__note {
   margin: 0.75rem 0 0;
   font-size: 0.8125rem;
-}
-.normnet-places {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.normnet-place {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-block: 0.25rem;
-  font-size: 0.875rem;
-  color: var(--normnet-color-text-subtle, #64748b);
-}
-.normnet-place--marked {
-  color: inherit;
-  font-weight: 700;
-}
-.normnet-place__state {
-  font-size: 0.6875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--normnet-color-ok, #39870c);
-  font-weight: 400;
-}
-.rvo-status-indicator--grijs {
-  background-color: var(--normnet-color-border-strong, #cbd5e1);
-  border-radius: 50%;
-  inline-size: 0.6rem;
-  block-size: 0.6rem;
-  flex: none;
 }
 .normnet-norms {
   list-style: none;

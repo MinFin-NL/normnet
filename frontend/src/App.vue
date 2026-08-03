@@ -31,6 +31,8 @@
             v-if="run.runId.value"
             :net="boot!.nets.to_be"
             :marking="run.marking.value"
+            :activity="run.activity.value"
+            :gated="run.pending.value?.gated ?? []"
             :norms="boot!.norms"
             :facts="run.facts.value"
             :violated-norm-ids="violatedNormIds"

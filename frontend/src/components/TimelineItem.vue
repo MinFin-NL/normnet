@@ -92,7 +92,7 @@
         </div>
         <p class="normnet-transition__actor">
           <span class="normnet-visually-hidden">Uitgevoerd door</span>
-          {{ t.actor }}
+          {{ actorLabel(t.actor) }}
           <template v-if="expert && t.tools.length">
             · gereedschap:
             <code v-for="tool in t.tools" :key="tool">{{ tool }}</code>
@@ -158,7 +158,17 @@
           <dd>{{ entry.replayOk ? 'geldig vuurspoor' : 'ONGELDIG' }}</dd>
         </div>
       </dl>
-      <p v-if="expert" class="normnet-card__replay">{{ entry.replayMessage }}</p>
+      <!-- The engine's replay verdict is an English one-liner meant for the CLI;
+           the page says it in Dutch and keeps the technical detail for a failure,
+           where the marking and step index are the whole point. -->
+      <p v-if="expert" class="normnet-card__replay">
+        <template v-if="entry.replayOk">
+          Het vuurspoor is opnieuw afgespeeld tegen het model en is geldig.
+        </template>
+        <template v-else>
+          Het vuurspoor is <strong>niet</strong> geldig — {{ entry.replayMessage }}
+        </template>
+      </p>
       <details v-if="expert" class="rvo-expandable-content">
         <summary>Vuurspoor ({{ entry.firingSequence.length }} stappen)</summary>
         <ol class="normnet-sequence">
@@ -179,7 +189,7 @@
 </template>
 
 <script setup lang="ts">
-import { decisionLabel, factLabel, factValue, isKnownFact, netLabel } from '../labels'
+import { actorLabel, decisionLabel, factLabel, factValue, isKnownFact, netLabel } from '../labels'
 import type { TimelineEntry } from '../types'
 import { useViewMode } from '../useViewMode'
 

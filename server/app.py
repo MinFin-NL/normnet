@@ -87,13 +87,16 @@ def bootstrap() -> dict:
             {"id": "ollama", "label": "Ollama (lokaal)",
              "hint": "Vereist een draaiende Ollama-server. Draait volledig lokaal — geen externe API."},
         ],
+        # This API serves the Dutch inspector only, so the norms go out in Dutch
+        # and fall back to the engine's English if a translation is missing. The
+        # prompts the agent receives keep using the English `guidance`.
         "norms": [
             {
                 "id": n.id,
                 "kind": n.kind,
                 "body": [str(b) for b in n.body],
-                "message": n.message,
-                "guidance": n.guidance,
+                "message": n.message_nl or n.message,
+                "guidance": n.guidance_nl or n.guidance,
             }
             for n in layer.norms
         ],

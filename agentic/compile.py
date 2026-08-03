@@ -114,6 +114,9 @@ class ViolationRecord:
     norm_id: str
     kind: str
     message: str
+    #: the same finding in Dutch, for the UI; empty when the norm has no
+    #: translation, in which case readers fall back to `message`
+    message_nl: str = ""
 
 
 @dataclass
@@ -222,7 +225,8 @@ class CompiledProcess:
 
         self.emit("decision_made", {
             "round": rnd, "decision_id": decision_id, "choice": judgement.choice,
-            "rationale": judgement.rationale, "confidence": judgement.confidence,
+            "rationale": judgement.rationale, "rationale_nl": judgement.rationale_nl,
+            "confidence": judgement.confidence,
             "source": judgement.source, "elapsed_ms": elapsed_ms,
             "label": by_id[judgement.choice].label,
         })
@@ -238,6 +242,7 @@ class CompiledProcess:
                 "round": rnd, "decision_id": decision_id, "options": options,
                 "recommendation": judgement.choice,
                 "rationale": judgement.rationale,
+                "rationale_nl": judgement.rationale_nl,
                 "confidence": judgement.confidence,
                 "labels": {t.id: t.label for t in candidates},
                 "gated": [t.id for t in gated],
@@ -291,7 +296,7 @@ class CompiledProcess:
         seen = {v.norm_id for v in state.get("violations", [])}
         ground = self.ground(marking, claim, facts, state.get("fired", []))
         fresh = [
-            ViolationRecord(rnd - 1, n.id, n.kind, n.message)
+            ViolationRecord(rnd - 1, n.id, n.kind, n.message, n.message_nl)
             for n in self.declarative.violations(ground)
             if n.id not in seen and (terminal or n.kind != "obligation")
         ]
@@ -300,7 +305,8 @@ class CompiledProcess:
                 print(f"    ⚠ VIOLATION {v.norm_id}: {v.message}")
         for v in fresh:
             self.emit("violation", {"round": v.round, "norm_id": v.norm_id,
-                                    "kind": v.kind, "message": v.message})
+                                    "kind": v.kind, "message": v.message,
+                                    "message_nl": v.message_nl})
 
         if terminal:
             return {"dispatch": [], "rounds": 1, "violations": fresh}
@@ -367,7 +373,8 @@ class CompiledProcess:
                 "round": payload["round"], "id": t.id, "label": t.label,
                 "actor": actor_of(t), "autonomy": str(t.meta.get("autonomy", "human")),
                 "tools": list(t.meta.get("tools", [])),
-                "note": outcome.note, "hours": duration_hours(t),
+                "note": outcome.note, "note_nl": outcome.note_nl,
+                "hours": duration_hours(t),
                 "facts_learned": _jsonable(outcome.facts),
                 "produces": [a.place for a in t.outputs],
                 "consumes": [a.place for a in t.inputs],

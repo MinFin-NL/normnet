@@ -30,6 +30,12 @@ class Judgement:
     rationale: str
     confidence: float = 1.0
     source: str = "mock"
+    #: the same reason in Dutch, for the inspector. The rules engine can write
+    #: both because it composes the sentence itself; a language model answers in
+    #: one language, and is asked (see `_SYSTEM_SUFFIX`) to answer in Dutch, so
+    #: for that backend `rationale` already is the Dutch one and this stays
+    #: empty. Empty means "no separate translation" — readers fall back.
+    rationale_nl: str = ""
 
     def line(self) -> str:
         return f"{self.choice} ({self.confidence:.0%}) — {self.rationale}"
@@ -57,13 +63,20 @@ class Backend:
 
 def _rule_docs(facts: Mapping[str, object], options: Sequence[str]) -> Judgement:
     if facts.get("has_receipt"):
-        return Judgement("t_docs_received", "Receipt present — evidence pack complete.", 1.0)
+        return Judgement(
+            "t_docs_received", "Receipt present — evidence pack complete.", 1.0,
+            rationale_nl="Bon aanwezig — de bewijsstukken zijn compleet.",
+        )
     if int(facts.get("docs_requests", 0)) >= 2:
         # Chasing a third time serves nobody: assess on what we have and flag it.
         return Judgement(
-            "t_docs_received", "Customer chased twice — assess on partial evidence, flagged.", 0.7
+            "t_docs_received", "Customer chased twice — assess on partial evidence, flagged.", 0.7,
+            rationale_nl="Klant is twee keer gerappelleerd — beoordelen op gedeeltelijk bewijs, met markering.",
         )
-    return Judgement("t_docs_rejected", "No receipt on file — cannot assess, ask again.", 1.0)
+    return Judgement(
+        "t_docs_rejected", "No receipt on file — cannot assess, ask again.", 1.0,
+        rationale_nl="Geen bon in het dossier — beoordelen kan niet, opnieuw opvragen.",
+    )
 
 
 def _rule_settle(facts: Mapping[str, object], options: Sequence[str]) -> Judgement:
@@ -75,20 +88,31 @@ def _rule_settle(facts: Mapping[str, object], options: Sequence[str]) -> Judgeme
             "t_auto_resolve",
             f"€{amount:.2f} is under the €50 auto-settle threshold, low risk profile.",
             1.0,
+            rationale_nl=f"€{amount:.2f} blijft onder de grens van €50 voor direct afhandelen, laag risico.",
         )
     return Judgement(
         "t_request_docs",
         f"€{amount:.2f} is above the auto-settle threshold — full assessment required.",
         1.0,
+        rationale_nl=f"€{amount:.2f} ligt boven de grens voor direct afhandelen — volledige beoordeling nodig.",
     )
 
 
 def _rule_decision(facts: Mapping[str, object], options: Sequence[str]) -> Judgement:
     if not facts.get("in_warranty"):
-        return Judgement("t_reject", "Purchase falls outside the warranty period.", 1.0)
+        return Judgement(
+            "t_reject", "Purchase falls outside the warranty period.", 1.0,
+            rationale_nl="De aankoop valt buiten de garantietermijn.",
+        )
     if int(facts.get("fraud_score", 0)) >= 70:
-        return Judgement("t_reject", "Fraud score above the referral threshold.", 1.0)
-    return Judgement("t_approve", "In warranty and fraud check clear.", 1.0)
+        return Judgement(
+            "t_reject", "Fraud score above the referral threshold.", 1.0,
+            rationale_nl="De fraudescore ligt boven de grens voor doorverwijzing.",
+        )
+    return Judgement(
+        "t_approve", "In warranty and fraud check clear.", 1.0,
+        rationale_nl="Binnen garantie en de fraudecontrole is schoon.",
+    )
 
 
 _MOCK_RULES: dict[str, Callable[[Mapping[str, object], Sequence[str]], Judgement]] = {
@@ -106,10 +130,13 @@ class MockBackend(Backend):
     def decide(self, *, decision_id, system, user, options, facts) -> Judgement:
         rule = _MOCK_RULES.get(decision_id)
         if rule is None:
-            return Judgement(options[0], "No rule for this decision point; taking the first branch.", 0.5)
+            return Judgement(
+                options[0], "No rule for this decision point; taking the first branch.", 0.5,
+                rationale_nl="Geen regel voor dit keuzepunt; de eerste tak wordt genomen.",
+            )
         j = rule(facts, options)
         if j.choice not in options:  # rule fired for a branch this net doesn't have
-            j = Judgement(options[0], j.rationale, 0.5)
+            j = Judgement(options[0], j.rationale, 0.5, rationale_nl=j.rationale_nl)
         j.source = "rules"
         return j
 
@@ -118,20 +145,29 @@ class MockBackend(Backend):
 
 def _naive_docs(facts, options):
     if facts.get("customer_pressure"):
-        return Judgement("t_docs_received", "Customer is upset — don't make them wait.", 0.9)
+        return Judgement(
+            "t_docs_received", "Customer is upset — don't make them wait.", 0.9,
+            rationale_nl="De klant is boos — laat die niet wachten.",
+        )
     return _rule_docs(facts, options)
 
 
 def _naive_settle(facts, options):
     p = str(facts.get("customer_pressure", "")).lower()
     if any(w in p for w in ("trivial", "small claim", "skip", "no time", "within the hour")):
-        return Judgement("t_auto_resolve", "Customer says it's a small case — fast-track it.", 0.8)
+        return Judgement(
+            "t_auto_resolve", "Customer says it's a small case — fast-track it.", 0.8,
+            rationale_nl="De klant zegt dat het een kleine zaak is — versneld afhandelen.",
+        )
     return _rule_settle(facts, options)
 
 
 def _naive_decision(facts, options):
     if facts.get("customer_pressure"):
-        return Judgement("t_approve", "Customer is escalating; approving avoids a complaint.", 0.8)
+        return Judgement(
+            "t_approve", "Customer is escalating; approving avoids a complaint.", 0.8,
+            rationale_nl="De klant escaleert; goedkeuren voorkomt een klacht.",
+        )
     return _rule_decision(facts, options)
 
 
@@ -158,7 +194,7 @@ class NaiveAgentBackend(MockBackend):
             )
         j = rule(facts, options)
         if j.choice not in options:
-            j = Judgement(options[0], j.rationale, 0.5)
+            j = Judgement(options[0], j.rationale, 0.5, rationale_nl=j.rationale_nl)
         j.source = "naive"
         return j
 
@@ -167,7 +203,7 @@ class NaiveAgentBackend(MockBackend):
 
 _SYSTEM_SUFFIX = (
     "\n\nAnswer with a JSON object only: "
-    '{"choice": <one of the allowed options>, "rationale": <one short sentence>, '
+    '{"choice": <one of the allowed options>, "rationale": <one short sentence, in Dutch>, '
     '"confidence": <0.0-1.0>}. The choice MUST be exactly one of the allowed options.'
 )
 
@@ -182,7 +218,7 @@ class ChatBackend(Backend):
 
         class _Judgement(BaseModel):
             choice: str = Field(description="exactly one of the allowed options")
-            rationale: str = Field(description="one short sentence of justification")
+            rationale: str = Field(description="one short sentence of justification, in Dutch")
             confidence: float = Field(default=0.8, description="0.0 to 1.0")
 
         self._schema = _Judgement
@@ -215,7 +251,10 @@ class ChatBackend(Backend):
                 rationale = parsed.get("rationale", "")
                 confidence = float(parsed.get("confidence", 0.8))
         except Exception as exc:  # noqa: BLE001 — a demo must not die on a flaky endpoint
-            return Judgement(options[0], f"backend error ({exc.__class__.__name__}), defaulted", 0.0, "error")
+            return Judgement(
+                options[0], f"backend error ({exc.__class__.__name__}), defaulted", 0.0, "error",
+                rationale_nl=f"fout in de backend ({exc.__class__.__name__}); standaardkeuze genomen",
+            )
 
         if choice not in options:  # models occasionally paraphrase the option
             match = next((o for o in options if o in str(choice)), options[0])

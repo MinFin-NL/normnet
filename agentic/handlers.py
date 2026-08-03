@@ -21,6 +21,21 @@ Facts = dict[str, object]
 class Outcome:
     facts: Facts
     note: str
+    #: the same line in Dutch, for the inspector. Same reasoning as the norms:
+    #: the engine, the CLI and `docs/` are English, the UI is Dutch, and a line
+    #: with a number in it cannot be translated by a lookup table in the
+    #: frontend. Empty means "no translation" — readers fall back to `note`.
+    note_nl: str = ""
+
+
+#: Dutch for the enumerated `evidence` values, so the assessor's summary line
+#: does not mix languages mid-sentence.
+_EVIDENCE_NL = {
+    "complete": "compleet",
+    "partial": "gedeeltelijk",
+    "incomplete": "onvolledig",
+    "waived": "niet nodig",
+}
 
 
 def _register(claim: Claim, facts: Mapping[str, object]) -> Outcome:
@@ -39,25 +54,39 @@ def _register(claim: Claim, facts: Mapping[str, object]) -> Outcome:
             "customer_pressure": claim.customer_pressure,
         },
         f"registered {claim.claim_id}; customer risk {risk}",
+        f"{claim.claim_id} geregistreerd; klantrisico {'hoog' if risk == 'high' else 'laag'}",
     )
 
 
 def _request_docs(claim: Claim, facts: Mapping[str, object]) -> Outcome:
     n = int(facts.get("docs_requests", 0)) + 1
-    return Outcome({"docs_requests": n}, f"asked customer for receipt + photos (attempt {n})")
+    return Outcome(
+        {"docs_requests": n},
+        f"asked customer for receipt + photos (attempt {n})",
+        f"klant om bon en foto's gevraagd (poging {n})",
+    )
 
 
 def _accept_docs(claim: Claim, facts: Mapping[str, object]) -> Outcome:
     if claim.has_receipt:
-        return Outcome({"evidence": "complete"}, "receipt and serial number verified")
+        return Outcome(
+            {"evidence": "complete"},
+            "receipt and serial number verified",
+            "bon en serienummer gecontroleerd",
+        )
     return Outcome(
         {"evidence": "partial"},
         "proceeding on partial evidence after repeated chase — flagged for the assessor",
+        "verder op gedeeltelijk bewijs na herhaald rappel — gemarkeerd voor de beoordelaar",
     )
 
 
 def _reject_docs(claim: Claim, facts: Mapping[str, object]) -> Outcome:
-    return Outcome({"evidence": "incomplete"}, "evidence pack incomplete, returning to intake")
+    return Outcome(
+        {"evidence": "incomplete"},
+        "evidence pack incomplete, returning to intake",
+        "bewijsstukken onvolledig, terug naar de intake",
+    )
 
 
 def _fraud_check(claim: Claim, facts: Mapping[str, object]) -> Outcome:
@@ -68,7 +97,7 @@ def _fraud_check(claim: Claim, facts: Mapping[str, object]) -> Outcome:
         score += 25
     if claim.customer_pressure:
         score += 10
-    return Outcome({"fraud_score": score}, f"fraud score {score}/100")
+    return Outcome({"fraud_score": score}, f"fraud score {score}/100", f"fraudescore {score}/100")
 
 
 def _coverage_check(claim: Claim, facts: Mapping[str, object]) -> Outcome:
@@ -76,14 +105,18 @@ def _coverage_check(claim: Claim, facts: Mapping[str, object]) -> Outcome:
     return Outcome(
         {"coverage_ok": covered},
         "within warranty period" if covered else "outside warranty period",
+        "binnen de garantietermijn" if covered else "buiten de garantietermijn",
     )
 
 
 def _assess(claim: Claim, facts: Mapping[str, object]) -> Outcome:
+    covered = facts.get("coverage_ok")
     return Outcome(
         {},
         f"assembled: coverage={facts.get('coverage_ok')} fraud={facts.get('fraud_score')} "
         f"evidence={facts.get('evidence')}",
+        f"samengebracht: garantie={'ja' if covered else 'nee' if covered is not None else '—'}, "
+        f"fraudescore={facts.get('fraud_score')}, bewijs={_EVIDENCE_NL.get(str(facts.get('evidence')), '—')}",
     )
 
 
@@ -91,11 +124,16 @@ def _auto_resolve(claim: Claim, facts: Mapping[str, object]) -> Outcome:
     return Outcome(
         {"settlement": "auto", "coverage_ok": True, "fraud_score": 0, "evidence": "waived"},
         f"settled €{claim.amount_eur:.2f} on the spot without requesting documents",
+        f"€{claim.amount_eur:.2f} direct afgehandeld, zonder documenten op te vragen",
     )
 
 
 def _payout(claim: Claim, facts: Mapping[str, object]) -> Outcome:
-    return Outcome({"paid_eur": claim.amount_eur}, f"refund of €{claim.amount_eur:.2f} released")
+    return Outcome(
+        {"paid_eur": claim.amount_eur},
+        f"refund of €{claim.amount_eur:.2f} released",
+        f"vergoeding van €{claim.amount_eur:.2f} vrijgegeven",
+    )
 
 
 _HANDLERS: dict[str, Callable[[Claim, Mapping[str, object]], Outcome]] = {

@@ -32,7 +32,7 @@
           zekerheid {{ Math.round((pending.confidence ?? 0) * 100) }}%
         </span>
       </p>
-      <p class="normnet-gate__reco-why">“{{ pending.rationale }}”</p>
+      <p class="normnet-gate__reco-why">“{{ pending.rationale_nl || pending.rationale }}”</p>
     </div>
 
     <div class="normnet-gate__actions">

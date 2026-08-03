@@ -13,6 +13,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { api } from './api'
 import type {
   DecisionEntry,
+  TransitionActivity,
   PendingDecision,
   RunEvent,
   RunStatus,
@@ -26,6 +27,10 @@ export function useRun() {
   const entries = shallowRef<TimelineEntry[]>([])
   const pending = ref<PendingDecision | null>(null)
   const marking = ref<Record<string, number>>({})
+  /** Per transition: is it running right now, has it run, and what did it
+   *  produce. This is what the step tracker reads — a reader asking "welke stap
+   *  gebeurt er nu?" is asking about the work, not about where a token sits. */
+  const activity = ref<Record<string, TransitionActivity>>({})
   const groundAtoms = ref<string[]>([])
   const facts = ref<Record<string, unknown>>({})
   const connectionError = ref<string | null>(null)
@@ -51,6 +56,22 @@ export function useRun() {
     () => isRunning.value || status.value === 'awaiting_human',
   )
 
+  function markBusy(ids: string[]) {
+    const next = { ...activity.value }
+    for (const id of ids) {
+      next[id] = { ...(next[id] ?? { fired: false, note: '', actor: '' }), busy: true }
+    }
+    activity.value = next
+  }
+
+  function markFired(id: string, note: string, actor: string) {
+    activity.value = { ...activity.value, [id]: { busy: false, fired: true, note, actor } }
+  }
+
+  function setMarking(next: Record<string, number>) {
+    marking.value = { ...next }
+  }
+
   function push(entry: TimelineEntry) {
     entries.value = [...entries.value, entry]
   }
@@ -73,12 +94,13 @@ export function useRun() {
     const d = event.data as any
     switch (event.kind) {
       case 'run_started':
-        marking.value = { ...d.initial_marking }
+        setMarking(d.initial_marking ?? {})
         break
 
       case 'round_started': {
-        marking.value = { ...d.marking }
+        setMarking(d.marking ?? {})
         groundAtoms.value = d.ground_atoms ?? []
+        markBusy((d.dispatch ?? []).map((t: any) => t.id))
         const step: StepEntry = {
           type: 'step',
           seq: event.seq,
@@ -111,7 +133,7 @@ export function useRun() {
           const transitions = e.transitions.slice()
           transitions[idx] = {
             ...transitions[idx],
-            note: d.note ?? '',
+            note: d.note_nl || d.note || '',
             factsLearned: d.facts_learned ?? {},
             consumes: d.consumes ?? [],
             produces: d.produces ?? [],
@@ -119,6 +141,7 @@ export function useRun() {
           replace(i, { ...e, transitions })
           break
         }
+        markFired(d.id, d.note_nl || d.note || '', d.actor ?? '')
         facts.value = { ...facts.value, ...(d.facts_learned ?? {}) }
         break
       }
@@ -152,7 +175,7 @@ export function useRun() {
           ...e,
           choice: d.choice,
           choiceLabel: d.label ?? d.choice,
-          rationale: d.rationale ?? '',
+          rationale: d.rationale_nl || d.rationale || '',
           confidence: d.confidence ?? 0,
           source: d.source ?? '',
           elapsedMs: d.elapsed_ms ?? 0,
@@ -205,12 +228,14 @@ export function useRun() {
           round: d.round,
           normId: d.norm_id,
           kind: d.kind,
-          message: d.message,
+          // The engine's finding is English; the Dutch rendering travels with
+          // the norm and is what this page shows.
+          message: d.message_nl || d.message,
         })
         break
 
       case 'run_finished':
-        marking.value = { ...d.marking }
+        setMarking(d.marking ?? {})
         facts.value = { ...(d.facts ?? {}) }
         status.value = 'done'
         push({
@@ -288,6 +313,7 @@ export function useRun() {
     entries.value = []
     pending.value = null
     marking.value = {}
+    activity.value = {}
     groundAtoms.value = []
     facts.value = {}
     connectionError.value = null
@@ -313,7 +339,7 @@ export function useRun() {
   }
 
   return {
-    runId, status, entries, pending, marking, groundAtoms, facts,
+    runId, status, entries, pending, marking, activity, groundAtoms, facts,
     connectionError, deciding, violations, finished, isRunning, isBusy,
     start, decide, close,
   }
