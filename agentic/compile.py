@@ -32,8 +32,9 @@ Two properties fall out of this that a hand-drawn agent graph doesn't get:
 from __future__ import annotations
 
 import operator
-from dataclasses import dataclass, field
-from typing import Annotated, Any, Sequence, TypedDict
+import time
+from dataclasses import asdict, dataclass, field, is_dataclass
+from typing import Annotated, Any, Callable, Sequence, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
@@ -45,6 +46,23 @@ from petrinet.lppn import DeclarativeLayer, Norm
 from process.claims import Claim
 
 MAX_ROUNDS = 40
+
+
+def _jsonable(value: Any) -> Any:
+    """Make engine state safe to publish over a wire.
+
+    The event stream carries live process state to a browser, so anything that
+    is not JSON has to be flattened here rather than blowing up mid-run.
+    """
+    if is_dataclass(value) and not isinstance(value, type):
+        return {k: _jsonable(v) for k, v in asdict(value).items()}
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
 
 # ------------------------------------------------------------- reducers
@@ -127,10 +145,21 @@ def actor_of(t: Transition) -> str:
 
 class CompiledProcess:
     def __init__(self, net: PetriNet, backend: Backend, verbose: bool = True,
-                 declarative: DeclarativeLayer | None = None, atom_fn=None):
+                 declarative: DeclarativeLayer | None = None, atom_fn=None,
+                 emit: "Callable[[str, dict], None] | None" = None,
+                 human_gate: "Callable[[dict], str] | None" = None):
         self.net = net
         self.backend = backend
         self.verbose = verbose
+        #: Observation hook. Every interesting moment is published here so a UI
+        #: can show what the process is doing *while* it does it, rather than
+        #: reconstructing it from a log afterwards. No-op by default.
+        self.emit = emit or (lambda _kind, _payload: None)
+        #: Called when a decision reaches a transition the net marks
+        #: ``human_in_loop``. Returns the transition id the human commits to.
+        #: When absent the agent's recommendation stands — which is what the
+        #: CLI and the tests want, and why the default keeps the old behaviour.
+        self.human_gate = human_gate
         # The declarative half (Sileno 2020). Optional: with it absent this is a
         # strictly procedural net, which Def. 3 says is just an ordinary Petri net.
         if declarative is None or atom_fn is None:
@@ -169,16 +198,66 @@ class CompiledProcess:
             # Undeclared conflict — deterministic tie-break so runs stay replayable.
             return sorted(candidates, key=lambda t: t.id)[0]
 
+        system = handlers.decision_system_prompt(decision_id)
+        user = handlers.describe_decision(decision_id, claim, facts)
+        options = sorted(by_id)
+
+        # Publish the *question* before the answer: a reviewer needs to see what
+        # the model was actually asked, not only what it replied.
+        self.emit("decision_requested", {
+            "round": rnd, "decision_id": decision_id, "options": options,
+            "system_prompt": system, "user_prompt": user, "facts": _jsonable(facts),
+            "backend": self.backend.name,
+        })
+
+        started = time.monotonic()
         judgement = self.backend.decide(
-            decision_id=decision_id,
-            system=handlers.decision_system_prompt(decision_id),
-            user=handlers.describe_decision(decision_id, claim, facts),
-            options=sorted(by_id),
-            facts=facts,
+            decision_id=decision_id, system=system, user=user,
+            options=options, facts=facts,
         )
-        self.decisions.append(DecisionRecord(rnd, decision_id, sorted(by_id), judgement))
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        self.decisions.append(DecisionRecord(rnd, decision_id, options, judgement))
         if self.verbose:
             print(f"    ? {decision_id}: {judgement.line()}")
+
+        self.emit("decision_made", {
+            "round": rnd, "decision_id": decision_id, "choice": judgement.choice,
+            "rationale": judgement.rationale, "confidence": judgement.confidence,
+            "source": judgement.source, "elapsed_ms": elapsed_ms,
+            "label": by_id[judgement.choice].label,
+        })
+
+        # A transition the net marks `human_in_loop` is not the agent's to
+        # commit. The agent has done the work and produced a recommendation;
+        # a person decides. Without a gate wired up the recommendation stands,
+        # which is the honest default for a headless run — but then the run is
+        # *not* human-in-the-loop and the audit's autonomy check should say so.
+        gated = [t for t in candidates if t.meta.get("autonomy") == "human_in_loop"]
+        if gated and self.human_gate is not None:
+            self.emit("awaiting_human", {
+                "round": rnd, "decision_id": decision_id, "options": options,
+                "recommendation": judgement.choice,
+                "rationale": judgement.rationale,
+                "confidence": judgement.confidence,
+                "labels": {t.id: t.label for t in candidates},
+                "gated": [t.id for t in gated],
+                "claim": _jsonable(claim.__dict__),
+                "facts": _jsonable(facts),
+            })
+            chosen = self.human_gate({
+                "round": rnd, "decision_id": decision_id, "options": options,
+                "recommendation": judgement.choice, "rationale": judgement.rationale,
+            })
+            if chosen not in by_id:
+                chosen = judgement.choice
+            self.emit("human_decided", {
+                "round": rnd, "decision_id": decision_id, "choice": chosen,
+                "overrode": chosen != judgement.choice,
+                "recommendation": judgement.choice,
+                "label": by_id[chosen].label,
+            })
+            return by_id[chosen]
+
         return by_id[judgement.choice]
 
     # -- nodes ---------------------------------------------------------------
@@ -219,6 +298,9 @@ class CompiledProcess:
         if fresh and self.verbose:
             for v in fresh:
                 print(f"    ⚠ VIOLATION {v.norm_id}: {v.message}")
+        for v in fresh:
+            self.emit("violation", {"round": v.round, "norm_id": v.norm_id,
+                                    "kind": v.kind, "message": v.message})
 
         if terminal:
             return {"dispatch": [], "rounds": 1, "violations": fresh}
@@ -233,6 +315,20 @@ class CompiledProcess:
                 consumed[arc.place] = consumed.get(arc.place, 0) - arc.weight
 
         cost = max(duration_hours(t) for t in step)
+        self.emit("round_started", {
+            "round": rnd,
+            "marking": dict(marking),
+            "ground_atoms": sorted(ground),
+            "dispatch": [
+                {"id": t.id, "label": t.label, "actor": actor_of(t),
+                 "autonomy": str(t.meta.get("autonomy", "human")),
+                 "tools": list(t.meta.get("tools", [])),
+                 "hours": duration_hours(t)}
+                for t in step
+            ],
+            "concurrent": len(step) > 1,
+            "elapsed_hours_delta": cost,
+        })
         if self.verbose:
             names = ", ".join(t.label for t in step)
             para = " ‖ " if len(step) > 1 else ""
@@ -267,6 +363,15 @@ class CompiledProcess:
             )
             if self.verbose and outcome.note:
                 print(f"       · {t.id}: {outcome.note}")
+            self.emit("transition_fired", {
+                "round": payload["round"], "id": t.id, "label": t.label,
+                "actor": actor_of(t), "autonomy": str(t.meta.get("autonomy", "human")),
+                "tools": list(t.meta.get("tools", [])),
+                "note": outcome.note, "hours": duration_hours(t),
+                "facts_learned": _jsonable(outcome.facts),
+                "produces": [a.place for a in t.outputs],
+                "consumes": [a.place for a in t.inputs],
+            })
             return {
                 "marking": produced,
                 "facts": outcome.facts,
@@ -305,6 +410,21 @@ class CompiledProcess:
 
     def run(self, claim: Claim) -> "RunResult":
         self.decisions = []
+        self.emit("run_started", {
+            "net": self.net.name,
+            "backend": self.backend.name,
+            "claim": _jsonable(claim.__dict__),
+            "initial_marking": dict(self.net.initial_marking),
+            "human_in_the_loop": self.human_gate is not None,
+            "places": [{"id": p.id, "label": p.label} for p in self.net.places],
+            "transitions": [
+                {"id": t.id, "label": t.label, "actor": actor_of(t),
+                 "autonomy": str(t.meta.get("autonomy", "human")),
+                 "inputs": [a.place for a in t.inputs],
+                 "outputs": [a.place for a in t.outputs]}
+                for t in self.net.transitions
+            ],
+        })
         final = self.graph.invoke(
             {
                 "marking": dict(self.net.initial_marking),
@@ -318,7 +438,7 @@ class CompiledProcess:
             },
             {"recursion_limit": 4 * MAX_ROUNDS},
         )
-        return RunResult(
+        result = RunResult(
             net=self.net,
             claim=claim,
             marking=final.get("marking", {}),
@@ -329,7 +449,24 @@ class CompiledProcess:
             violations=final.get("violations", []),
             decisions=list(self.decisions),
             backend=self.backend.name,
+            human_in_the_loop=self.human_gate is not None,
         )
+        legal, replay_msg = self.net.is_legal_firing_sequence(result.firing_sequence)
+        self.emit("run_finished", {
+            "outcome": result.decision_outcome,
+            "completed": result.completed,
+            "compliant": result.compliant,
+            "elapsed_hours": result.elapsed_hours,
+            "human_touches": result.human_touches,
+            "handoffs": result.handoffs,
+            "marking": dict(result.marking),
+            "facts": _jsonable(result.facts),
+            "firing_sequence": result.firing_sequence,
+            "replay_ok": legal,
+            "replay_message": replay_msg,
+            "violations": [_jsonable(v) for v in result.violations],
+        })
+        return result
 
 
 @dataclass
@@ -344,6 +481,9 @@ class RunResult:
     violations: list[ViolationRecord]
     decisions: list[DecisionRecord]
     backend: str
+    #: True when a person actually committed the `human_in_loop` steps. The net
+    #: *declaring* a step human-committed is not evidence that one was.
+    human_in_the_loop: bool = False
 
     @property
     def completed(self) -> bool:

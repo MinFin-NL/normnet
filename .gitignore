@@ -12,3 +12,8 @@ venv/
 
 # OS
 .DS_Store
+
+# Frontend build output & deps
+frontend/node_modules/
+frontend/dist/
+frontend/.tsbuild/

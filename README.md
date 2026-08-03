@@ -31,8 +31,9 @@ Anthropic's [Petri](https://www.anthropic.com/research/petri-open-source-auditin
 > opinion. See [`audit/petri_audit.py`](audit/petri_audit.py).
 
 ```bash
-python run_demo.py            # full walkthrough, no API key needed
-python -m pytest tests/ -q    # 57 tests
+python run_demo.py            # full walkthrough in the terminal, no API key needed
+./run_ui.sh                   # web inspector — watch it step by step
+python -m pytest tests/ -q    # 73 tests
 ```
 
 ---
@@ -229,6 +230,61 @@ both, and a formal model is what lets you tell them apart.
 
 ---
 
+## The inspector
+
+`./run_ui.sh` serves a web UI that answers three questions while a run is in
+progress: **what just happened**, **what did the model decide and why**, and
+**where is it waiting for me**.
+
+Built with Vue 3 + Vite against the
+[NL Design System](https://nldesignsystem.nl/) via the RVO theme
+(`@nl-rvo/component-library-css`, `@nl-rvo/design-tokens`, `@nl-rvo/assets`) —
+the same stack and the same `.rvo-theme` conventions as
+[invulhulp](https://github.com/MinFin-NL/invulhulp).
+
+**Every step.** Each round is a card: which transitions fired, which agent ran
+them, with which tools, what got recorded, and how long it took. Rounds that
+fire more than one transition are labelled as concurrent — because the marking
+said the tokens were there, not because anyone parallelised them by hand.
+
+**What the model was asked.** Every decision point shows the *full* prompt, not
+just the answer — including the generated norms block, so you can check by eye
+that the rule the model was given is the rule the auditor enforces. Alongside
+it: the choice, the model's own rationale, its confidence, and the latency.
+
+**Where it waits.** At a transition the net marks `human_in_loop`, the run
+**genuinely blocks** — the worker thread sits on an `Event` until someone
+commits. The agent's recommendation and reasoning are shown, and you can
+confirm or override it.
+
+Overriding is the part worth trying. Approve the out-of-warranty claim against
+the agent's advice and **N2 fires immediately** — the norms hold a person to
+exactly the standard they hold the agent to, which is the difference between a
+human-in-the-loop control and a rubber stamp.
+
+### Running it
+
+```bash
+./run_ui.sh          # builds the frontend if needed, serves everything on :8000
+./run_ui.sh --dev    # API on :8000 + Vite hot reload on :5173
+```
+
+The API is small — `server/app.py` is five endpoints. Events are append-only and
+index-addressed, so `GET /api/runs/{id}/stream?from=N` resumes exactly where a
+dropped connection left off; that matters because a run can sit at a human gate
+for minutes, long enough for a laptop to sleep.
+
+### Accessibility
+
+DigiToegankelijk / WCAG 2.1 is mandatory for Dutch government sites, so: `lang="nl"`,
+a skip link, visible focus rings, `prefers-reduced-motion` honoured, the gate
+announced via `role="alert"`, new steps via `aria-live="polite"`, and no state
+carried by colour alone — every badge has a text label. It has **not** been
+audited with axe or a screen reader; treat it as built-to-the-rules, not
+certified.
+
+---
+
 ## Backends
 
 Every decision point routes through one `Backend`, so swapping backends changes
@@ -261,7 +317,11 @@ agentic/compile.py      Petri net → LangGraph token-game interpreter
 agentic/handlers.py     what each transition does; the decision points
 agentic/llm.py          pluggable decision backends
 audit/petri_audit.py    Anthropic-Petri-shaped audit: seeds, formal checks, judge
+server/app.py           inspector API: bootstrap, runs, SSE stream, decide
+server/runner.py        runs a process on a worker thread; the human gate
+frontend/               Vue 3 + NL Design System (RVO) inspector
 run_demo.py             the six-section walkthrough
+run_ui.sh               start the inspector
 docs/LPPN.md            the paper, what's implemented, and what isn't
 docs/*.mmd              generated diagrams (`python run_demo.py --mermaid`)
 ```
