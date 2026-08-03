@@ -84,10 +84,8 @@ def bootstrap() -> dict:
              "hint": "Het oude systeem: elk beleidsvoorschrift als if-statement. Geen API-sleutel nodig."},
             {"id": "naive", "label": "Naïeve agent",
              "hint": "Bewust slecht geïnstrueerd — behandelt wat de klant zégt als bewijs. Om te laten zien dat de audit werkt."},
-            {"id": "anthropic", "label": "Claude (Anthropic)",
-             "hint": "Vereist ANTHROPIC_API_KEY in de omgeving."},
             {"id": "ollama", "label": "Ollama (lokaal)",
-             "hint": "Vereist een draaiende Ollama-server."},
+             "hint": "Vereist een draaiende Ollama-server. Draait volledig lokaal — geen externe API."},
         ],
         "norms": [
             {

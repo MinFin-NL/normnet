@@ -2,7 +2,7 @@
 """NormNet — auditable business-process automation with LLMs, end to end.
 
     python run_demo.py                     # full demo, deterministic rules backend
-    python run_demo.py --backend anthropic # let Claude make the judgement calls
+    python run_demo.py --backend ollama    # let a local model make the judgement calls
     python run_demo.py --scenario pressure # run one case
     python run_demo.py --only audit        # just the Petri-style audit
     python run_demo.py --mermaid           # write docs/*.mmd and exit
@@ -271,7 +271,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backend", default="auto",
-                    choices=["auto", "mock", "naive", "anthropic", "ollama"])
+                    choices=["auto", "mock", "naive", "ollama"])
     ap.add_argument("--scenario", default=None, choices=sorted(SCENARIOS))
     ap.add_argument("--only", default=None,
                     choices=["model", "norms", "rebuild", "execute", "compare", "audit"])

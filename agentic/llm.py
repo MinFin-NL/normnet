@@ -1,15 +1,14 @@
 """Pluggable decision backends.
 
-The demo has to run for anyone who clones it, so there are three backends and
-the default auto-selects:
+The demo has to run for anyone who clones it, and it runs entirely locally —
+there is no hosted-API backend. The default auto-selects:
 
 ``mock``       a deterministic rules engine — no network, no keys. This is not
                a stub: it *is* the old system. Every decision the humans made by
                following a policy document is encoded as an if-statement, which
                is exactly what makes the comparison honest.
-``anthropic``  Claude via langchain-anthropic. Used when ANTHROPIC_API_KEY is set.
-``ollama``     a local model via langchain-ollama, for running fully offline
-               with real judgement instead of rules.
+``ollama``     a local model via langchain-ollama, for real judgement instead of
+               rules. Picked automatically when PETRI_OLLAMA_URL is set.
 
 Everything downstream depends only on the :class:`Judgement` shape, so swapping
 backends never changes the process semantics — only the quality of the calls.
@@ -21,7 +20,6 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Mapping, Sequence
 
-DEFAULT_ANTHROPIC_MODEL = "claude-opus-5"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:3b"
 DEFAULT_OLLAMA_URL = "http://192.168.1.66:11434"
 
@@ -226,18 +224,6 @@ class ChatBackend(Backend):
         return Judgement(choice, rationale, float(confidence), self.name)
 
 
-def _anthropic_backend() -> Backend:
-    from langchain_anthropic import ChatAnthropic
-
-    model = ChatAnthropic(
-        model=os.environ.get("PETRI_ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL),
-        # thinking is on by default on Opus 5 and shares the max_tokens budget
-        # with the answer, so leave real headroom or decisions truncate.
-        max_tokens=8192,
-    )
-    return ChatBackend(model, f"anthropic:{model.model}")
-
-
 def _ollama_backend() -> Backend:
     from langchain_ollama import ChatOllama
 
@@ -254,13 +240,6 @@ def get_backend(kind: str = "auto") -> Backend:
         return MockBackend()
     if kind == "naive":
         return NaiveAgentBackend()
-    if kind in ("auto", "anthropic") and os.environ.get("ANTHROPIC_API_KEY"):
-        try:
-            return _anthropic_backend()
-        except Exception as exc:  # noqa: BLE001
-            if kind == "anthropic":
-                raise
-            print(f"  ! anthropic backend unavailable ({exc.__class__.__name__}), falling back")
     if kind == "ollama":
         return _ollama_backend()
     if kind == "auto" and os.environ.get("PETRI_OLLAMA_URL"):

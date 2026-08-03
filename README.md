@@ -294,12 +294,12 @@ the quality of the judgement and never the process semantics.
 |---|---|
 | `mock` *(default)* | A deterministic rules engine. Not a stub — it *is* the legacy system: every policy-document rule as an if-statement. That's what makes the comparison honest. |
 | `naive` | A plausibly-but-badly prompted agent that treats what the customer *says* as evidence. Exists so the audit has something to find. |
-| `anthropic` | Claude via `langchain-anthropic` (`claude-opus-5`). Used automatically when `ANTHROPIC_API_KEY` is set. |
-| `ollama` | A local model via `langchain-ollama`. Set `PETRI_OLLAMA_URL`. |
+| `ollama` | A local model via `langchain-ollama`. Set `PETRI_OLLAMA_URL` (and optionally `PETRI_OLLAMA_MODEL`). |
 
-The default is `auto`, which prefers a real model when credentials exist and
-falls back to the rules engine rather than failing. **The demo runs fully offline
-with no API key** — that path is the tested one.
+There is no hosted-API backend: **every model call in this demo goes to a local
+Ollama server, never to an external provider.** The default is `auto`, which
+uses Ollama when `PETRI_OLLAMA_URL` is set and falls back to the rules engine
+rather than failing.
 
 ---
 
@@ -332,7 +332,7 @@ Python and could be lifted out on their own.
 ## Options
 
 ```
---backend {auto,mock,naive,anthropic,ollama}
+--backend {auto,mock,naive,ollama}
 --scenario {standard,micro,out_of_warranty,pressure}
 --only {model,norms,rebuild,execute,compare,audit}
 --mermaid          write docs/*.mmd and exit
@@ -341,7 +341,7 @@ Python and could be lifted out on their own.
 ## Install
 
 ```bash
-pip install langgraph langchain-anthropic   # langchain-ollama for the local path
+pip install langgraph langchain-ollama   # langchain-ollama only needed for the LLM path
 ```
 
 Installing into a virtualenv is worth it here — `langgraph` pulls a recent
