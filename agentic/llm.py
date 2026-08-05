@@ -1,7 +1,7 @@
 """Pluggable decision backends.
 
-The demo has to run for anyone who clones it, and it runs entirely locally —
-there is no hosted-API backend. The default auto-selects:
+The demo has to run for anyone who clones it, so it needs no keys by default.
+The default auto-selects:
 
 ``mock``       a deterministic rules engine — no network, no keys. This is not
                a stub: it *is* the old system. Every decision the humans made by
@@ -9,6 +9,15 @@ there is no hosted-API backend. The default auto-selects:
                is exactly what makes the comparison honest.
 ``ollama``     a local model via langchain-ollama, for real judgement instead of
                rules. Picked automatically when PETRI_OLLAMA_URL is set.
+``azure``      Azure OpenAI, the hosted deployment this project runs on. Picked
+               automatically when AZURE_OPENAI_ENDPOINT is set, which is how the
+               container app is configured — a container has no local Ollama to
+               talk to. Reads the same variable names as the invulhulp backend:
+
+                   AZURE_OPENAI_ENDPOINT     resource endpoint (selects this backend)
+                   AZURE_OPENAI_API_KEY      API key
+                   AZURE_OPENAI_DEPLOYMENT   deployment name (default below)
+                   AZURE_OPENAI_API_VERSION  API version (default below)
 
 Everything downstream depends only on the :class:`Judgement` shape, so swapping
 backends never changes the process semantics — only the quality of the calls.
@@ -22,6 +31,9 @@ from typing import Callable, Mapping, Sequence
 
 DEFAULT_OLLAMA_MODEL = "qwen2.5:3b"
 DEFAULT_OLLAMA_URL = "http://192.168.1.66:11434"
+
+DEFAULT_AZURE_DEPLOYMENT = "gpt-5.3-chat"
+DEFAULT_AZURE_API_VERSION = "2025-04-01-preview"
 
 
 @dataclass
@@ -273,6 +285,31 @@ def _ollama_backend() -> Backend:
     return ChatBackend(model, f"ollama:{model.model}")
 
 
+def _azure_backend() -> Backend:
+    from langchain_openai import AzureChatOpenAI
+
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", DEFAULT_AZURE_DEPLOYMENT)
+    model = AzureChatOpenAI(
+        azure_deployment=deployment,
+        azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
+        api_key=os.environ.get("AZURE_OPENAI_API_KEY", ""),
+        api_version=os.environ.get("AZURE_OPENAI_API_VERSION", DEFAULT_AZURE_API_VERSION),
+        # Deliberately unset, not a forgotten knob. A low temperature would suit
+        # an audit trail — the same claim ought to decide the same way twice —
+        # but both deployments behind this project reject the parameter: the
+        # chat-latest model accepts only its default, reasoning models take none
+        # at all. Sending one fails every call, which is worse than sampling.
+        temperature=None,
+    )
+    return ChatBackend(model, f"azure:{deployment}")
+
+
+def azure_configured() -> bool:
+    """True when the hosted deployment is available — the UI offers it instead
+    of Ollama, which only exists on a developer's own machine."""
+    return bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
+
+
 def get_backend(kind: str = "auto") -> Backend:
     """Resolve a backend, falling back to the rules engine rather than failing."""
     if kind == "mock":
@@ -281,6 +318,13 @@ def get_backend(kind: str = "auto") -> Backend:
         return NaiveAgentBackend()
     if kind == "ollama":
         return _ollama_backend()
+    if kind == "azure":
+        return _azure_backend()
+    if kind == "auto" and azure_configured():
+        try:
+            return _azure_backend()
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! azure backend unavailable ({exc.__class__.__name__}), falling back")
     if kind == "auto" and os.environ.get("PETRI_OLLAMA_URL"):
         try:
             return _ollama_backend()

@@ -295,11 +295,15 @@ the quality of the judgement and never the process semantics.
 | `mock` *(default)* | A deterministic rules engine. Not a stub — it *is* the legacy system: every policy-document rule as an if-statement. That's what makes the comparison honest. |
 | `naive` | A plausibly-but-badly prompted agent that treats what the customer *says* as evidence. Exists so the audit has something to find. |
 | `ollama` | A local model via `langchain-ollama`. Set `PETRI_OLLAMA_URL` (and optionally `PETRI_OLLAMA_MODEL`). |
+| `azure` | The Azure OpenAI deployment this project runs on in the ministry's tenant — the same model the invulhulp project uses. Set `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_API_KEY`; see `.env.azure.example`. |
 
-There is no hosted-API backend: **every model call in this demo goes to a local
-Ollama server, never to an external provider.** The default is `auto`, which
-uses Ollama when `PETRI_OLLAMA_URL` is set and falls back to the rules engine
-rather than failing.
+**Model calls never leave the machine or the tenant they are configured for.**
+On a laptop that means Ollama; on the deployed inspector it means Azure OpenAI
+inside the ministry's own subscription. There is no third-party API in either
+path. The two are mutually exclusive by design — a container has no local
+Ollama, a laptop has no Azure key — so the inspector offers whichever one is
+configured, and `--backend auto` prefers Azure, then Ollama, then falls back to
+the rules engine rather than failing.
 
 ---
 
@@ -332,7 +336,7 @@ Python and could be lifted out on their own.
 ## Options
 
 ```
---backend {auto,mock,naive,ollama}
+--backend {auto,mock,naive,ollama,azure}
 --scenario {standard,micro,out_of_warranty,pressure}
 --only {model,norms,rebuild,execute,compare,audit}
 --mermaid          write docs/*.mmd and exit
@@ -350,7 +354,31 @@ uv run <cmd>     # run inside it — no activation needed
 
 `uv sync` also handles the dev group (`pytest`). The Petri net engine
 (`petrinet/`) itself has no dependencies at all; the rest are for the LangGraph
-execution layer, the Ollama backend, and the inspector.
+execution layer, the model backends, and the inspector.
+
+## Deploy
+
+The inspector runs on Azure Container Apps in `rg-normnet-inno-d`, alongside the
+invulhulp deployment and pointing at the same `gpt-5.3-chat` deployment.
+
+```
+rg-normnet-inno-d
+├── acrnormnetinnod       the image registry
+├── cae-normnet-inno-d    the Container Apps environment
+└── ca-normnet-inno-d     the app — API and SPA in one container
+```
+
+One container, because the API already serves the built frontend; see
+`Dockerfile`. `azure-pipelines.yml` builds and deploys it on a push to `main`,
+reading endpoint, key and the two allowed IP ranges from the `normnet-secrets`
+variable group.
+
+Ingress is restricted to the ministry's own IP ranges — the app itself has no
+login, so that restriction is the only thing standing in front of it. Anyone
+who can reach it can start runs against the model. It scales `min=max=1`
+deliberately: a run lives in one replica's memory and its SSE stream is pinned
+to that replica, so a second replica would strand clients on a process that
+never saw their run.
 
 ## Extending it
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -26,6 +27,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from agentic.llm import DEFAULT_AZURE_DEPLOYMENT, azure_configured
 from process.claims import SCENARIOS, as_is_net, to_be_net
 from process.norms import AUTO_SETTLE_LIMIT_EUR, FRAUD_REFERRAL_SCORE, claims_declarative_layer
 from server.runner import NETS, RunRegistry
@@ -84,8 +86,7 @@ def bootstrap() -> dict:
              "hint": "Het oude systeem: elk beleidsvoorschrift als if-statement. Geen API-sleutel nodig."},
             {"id": "naive", "label": "Naïeve agent",
              "hint": "Bewust slecht geïnstrueerd — behandelt wat de klant zégt als bewijs. Om te laten zien dat de audit werkt."},
-            {"id": "ollama", "label": "Ollama (lokaal)",
-             "hint": "Vereist een draaiende Ollama-server. Draait volledig lokaal — geen externe API."},
+            *_llm_backend(),
         ],
         # This API serves the Dutch inspector only, so the norms go out in Dutch
         # and fall back to the engine's English if a translation is missing. The
@@ -107,6 +108,26 @@ def bootstrap() -> dict:
         },
         "nets": {name: _net_shape(fn()) for name, fn in NETS.items()},
     }
+
+
+def _llm_backend() -> list[dict]:
+    """The one real-model option, named for where it actually runs.
+
+    Offering both would offer one that cannot work: the hosted deployment has no
+    Ollama on localhost, and a laptop running the demo has no Azure key.
+    """
+    if azure_configured():
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", DEFAULT_AZURE_DEPLOYMENT)
+        return [{
+            "id": "azure",
+            "label": f"Azure OpenAI ({deployment})",
+            "hint": "Hetzelfde model als de invulhulp, binnen de Azure-omgeving van het ministerie.",
+        }]
+    return [{
+        "id": "ollama",
+        "label": "Ollama (lokaal)",
+        "hint": "Vereist een draaiende Ollama-server. Draait volledig lokaal — geen externe API.",
+    }]
 
 
 def _net_shape(net) -> dict:
