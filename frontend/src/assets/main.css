@@ -102,3 +102,17 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+/* ── The newest step ──────────────────────────────────────────────────────
+   When entries arrive one at a time, the eye still needs telling which one is
+   new. A brief tint plus a lead-in, both suppressed under reduced-motion by
+   the block above. */
+.normnet-item.is-newest > .normnet-card,
+.normnet-item.is-newest > article {
+  animation: normnet-land 0.45s ease-out;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--normnet-color-auto, #007bc7) 35%, transparent);
+}
+@keyframes normnet-land {
+  from { opacity: 0; transform: translateY(0.5rem); }
+  to { opacity: 1; transform: none; }
+}

@@ -192,6 +192,9 @@ export interface ExecutorMeta {
   icon: string
   /** one line, for a tooltip and the legend */
   explanation: string
+  /** the same thing at a glance, for the compact legend that stays on screen
+   *  while a run is playing — the long form is a lecture nobody re-reads */
+  oneLiner: string
 }
 
 export const EXECUTORS: Record<ExecutorKind, ExecutorMeta> = {
@@ -201,6 +204,7 @@ export const EXECUTORS: Record<ExecutorKind, ExecutorMeta> = {
     icon: '⚙',
     explanation:
       'Uitgevoerd door code die is vastgelegd: dezelfde invoer geeft altijd dezelfde uitkomst. Geen taalmodel, geen mens.',
+    oneLiner: 'Code. Zelfde invoer, zelfde uitkomst.',
   },
   llm: {
     label: 'Taalmodel',
@@ -208,6 +212,7 @@ export const EXECUTORS: Record<ExecutorKind, ExecutorMeta> = {
     icon: '◆',
     explanation:
       'Hier had het proces meerdere toegestane vervolgstappen. Een taalmodel heeft gekozen en die keuze gemotiveerd.',
+    oneLiner: 'Meer dan één stap mocht. Het model koos — en motiveert.',
   },
   human: {
     label: 'Mens',
@@ -215,6 +220,7 @@ export const EXECUTORS: Record<ExecutorKind, ExecutorMeta> = {
     icon: '☻',
     explanation:
       'Een mens neemt dit besluit. Het proces staat hier werkelijk stil tot er iemand tekent.',
+    oneLiner: 'Het proces staat stil tot ú tekent.',
   },
 }
 

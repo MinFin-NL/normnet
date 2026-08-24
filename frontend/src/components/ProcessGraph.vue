@@ -94,12 +94,21 @@
               width="5"
               :height="T_H"
             />
-            <text
+            <rect
               class="normnet-graph__t-glyph"
-              :x="t.x + T_W / 2 - 8"
-              :y="t.y - T_H / 2 + 12"
+              :class="`is-icon-${t.executor}`"
+              :x="t.x + T_W / 2 - 18"
+              :y="t.y - T_H / 2 + 6"
+              width="11"
+              height="11"
+            />
+            <text
+              v-if="t.llmAdvises"
+              class="normnet-graph__t-advice"
+              :x="t.x + T_W / 2 - 20"
+              :y="t.y - T_H / 2 + 15"
               text-anchor="end"
-            >{{ t.glyph }}</text>
+            >+</text>
             <text :x="t.x" :y="t.y" text-anchor="middle" dominant-baseline="middle">
               <tspan
                 v-for="(line, i) in t.lines"
@@ -146,8 +155,8 @@
         <h3 class="normnet-graph__legend-title">Wie voert de stap uit?</h3>
         <ul class="normnet-graph__legend normnet-graph__legend--exec">
           <li v-for="(meta, kind) in EXECUTORS" :key="kind">
-            <span class="normnet-graph__exec-key" :class="`is-by-${kind}`" aria-hidden="true">
-              {{ meta.icon }}
+            <span class="normnet-graph__exec-key" :class="`is-by-${kind}`">
+              <ExecutorIcon :kind="(kind as ExecutorKind)" size="0.9rem" />
             </span>
             <span><strong>{{ meta.label }}</strong> — {{ meta.explanation }}</span>
           </li>
@@ -176,8 +185,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { EXECUTORS, executorMeta, netLabel } from '../labels'
-import type { NetShape, TransitionActivity } from '../types'
+import ExecutorIcon from './ExecutorIcon.vue'
+import { EXECUTORS, netLabel } from '../labels'
+import type { ExecutorKind, NetShape, TransitionActivity } from '../types'
 import { useViewMode } from '../useViewMode'
 
 const props = defineProps<{
@@ -289,7 +299,7 @@ const transitionNodes = computed(() =>
         id: t.id,
         state,
         executor,
-        glyph: executorMeta(executor).icon + (t.llm_advises ? '◆' : ''),
+        llmAdvises: !!t.llm_advises,
         lines: wrap(netLabel(t.id, t.label)),
         ...LAYOUT[t.id],
       }
@@ -569,9 +579,32 @@ const summary = computed(() => {
   stroke: none;
   fill: #94a3b8;
 }
+/* Masked so the diagram carries the same three marks as every badge: the
+   NLDS code and person icons, and the sparkle FinChat uses for the model. */
 .normnet-graph__t-glyph {
-  font-size: 10px;
   fill: #64748b;
+  stroke: none;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.normnet-graph__t-glyph.is-icon-deterministic {
+  -webkit-mask-image: url('@nl-rvo/assets/icons/gereedschap/tandwiel-met-vinkje.svg');
+  mask-image: url('@nl-rvo/assets/icons/gereedschap/tandwiel-met-vinkje.svg');
+}
+.normnet-graph__t-glyph.is-icon-llm {
+  -webkit-mask-image: url('../assets/icons/model-sparkle.svg');
+  mask-image: url('../assets/icons/model-sparkle.svg');
+}
+.normnet-graph__t-glyph.is-icon-human {
+  -webkit-mask-image: url('@nl-rvo/assets/icons/functioneel/user.svg');
+  mask-image: url('@nl-rvo/assets/icons/functioneel/user.svg');
+}
+.normnet-graph__t-advice {
+  font-size: 10px;
+  font-weight: 700;
+  fill: #5b2d90;
 }
 .normnet-graph__t.is-by-llm .normnet-graph__t-stripe {
   fill: #7c3aed;

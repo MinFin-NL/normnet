@@ -1,47 +1,5 @@
 <template>
   <div class="normnet-side">
-    <!-- Where the case sits right now -->
-    <section
-      class="rvo-card rvo-card--outline rvo-card--padding-md normnet-panel"
-      aria-labelledby="marking-heading"
-    >
-      <div class="normnet-panel__head">
-        <h2 id="marking-heading" class="rvo-heading rvo-heading--margin-3 normnet-panel__title">
-          Waar staat de zaak nu?
-        </h2>
-        <!-- The list answers "hoe ver is het?"; the graph answers "hoe hangt
-             het samen?". A dialog rather than a second column: the whole net
-             does not fit next to a 24rem panel and reading it is a deliberate
-             detour, not something to keep in the corner of your eye. -->
-        <button
-          type="button"
-          class="rvo-button rvo-button--tertiary rvo-button--size-xs normnet-panel__graph-btn"
-          aria-haspopup="dialog"
-          @click="graphOpen = true"
-        >
-          {{ expert ? 'Toon graafweergave' : 'Toon het hele proces' }}
-        </button>
-      </div>
-      <p v-if="expert" class="normnet-panel__intro">
-        Afgeleid uit de <em>marking</em> en het vuurspoor: welke transitie draait,
-        welke hebben gevuurd. Dit ís de toestand van het proces — er is geen
-        aparte statusvariabele.
-      </p>
-      <p v-else class="normnet-panel__intro">
-        Welke stap nu wordt uitgevoerd, wat er al af is en wat nog volgt.
-      </p>
-
-      <ProcessTracker :net="net" :activity="activity" :gated="gated" />
-
-      <ProcessGraph
-        v-model:open="graphOpen"
-        :net="net"
-        :marking="marking"
-        :activity="activity"
-        :gated="gated"
-      />
-    </section>
-
     <!-- Norm status -->
     <section
       class="rvo-card rvo-card--outline rvo-card--padding-md normnet-panel"
@@ -58,6 +16,18 @@
         De regels waaraan dit proces zich moet houden. Ze gelden voor de agent én
         voor u.
       </p>
+      <!-- Five norms at full length is a column of legal text that dwarfs the
+           timeline next to it and that nobody reads until one goes red. Clamped
+           by default; a violated norm always opens itself, because at that
+           moment the exact wording is the thing the reader wants. -->
+      <button
+        type="button"
+        class="normnet-panel__toggle"
+        :aria-expanded="normsOpen"
+        @click="normsOpen = !normsOpen"
+      >
+        {{ normsOpen ? 'Toon ingekort' : 'Toon de normen voluit' }}
+      </button>
       <ul class="normnet-norms">
         <li v-for="norm in norms" :key="norm.id" class="normnet-norm">
           <div class="normnet-norm__head">
@@ -78,7 +48,12 @@
               {{ violatedIds.has(norm.id) ? 'geschonden' : 'niet geschonden' }}
             </span>
           </div>
-          <p class="normnet-norm__guidance">{{ norm.guidance }}</p>
+          <p
+            class="normnet-norm__guidance"
+            :class="{ 'is-clamped': !normsOpen && !violatedIds.has(norm.id) }"
+          >
+            {{ norm.guidance }}
+          </p>
           <code v-if="expert" class="normnet-norm__body">:- {{ norm.body.join(', ') }}.</code>
         </li>
       </ul>
@@ -113,18 +88,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import ProcessGraph from './ProcessGraph.vue'
-import ProcessTracker from './ProcessTracker.vue'
 import { factLabel, factValue, isKnownFact } from '../labels'
-import type { NetShape, NormInfo, TransitionActivity } from '../types'
+import type { NormInfo } from '../types'
 import { useViewMode } from '../useViewMode'
 
 const props = defineProps<{
-  net: NetShape
-  marking: Record<string, number>
-  activity: Record<string, TransitionActivity>
-  /** transitions the run is blocked on, waiting for a person */
-  gated: string[]
   norms: NormInfo[]
   facts: Record<string, unknown>
   violatedNormIds: string[]
@@ -132,7 +100,7 @@ const props = defineProps<{
 
 const { expert } = useViewMode()
 
-const graphOpen = ref(false)
+const normsOpen = ref(false)
 
 const violatedIds = computed(() => new Set(props.violatedNormIds))
 
@@ -146,6 +114,24 @@ const factEntries = computed(() => {
 </script>
 
 <style scoped>
+.normnet-panel__toggle {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0;
+  margin-block-end: 0.5rem;
+  background: none;
+  border: 0;
+  color: var(--rvo-color-donkerblauw, #01689b);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.normnet-norm__guidance.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .normnet-side {
   display: flex;
   flex-direction: column;

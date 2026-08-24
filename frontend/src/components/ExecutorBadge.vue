@@ -7,7 +7,7 @@
     :class="[`normnet-exec--${kind}`, { 'normnet-exec--sm': small }]"
     :title="meta.explanation"
   >
-    <span class="normnet-exec__icon" aria-hidden="true">{{ meta.icon }}</span>
+    <ExecutorIcon :kind="kind" class="normnet-exec__icon" />
     <span class="normnet-exec__text">{{ small ? meta.short : meta.label }}</span>
     <span v-if="llmAdvises" class="normnet-exec__advice">
       <span class="normnet-exec__sep" aria-hidden="true">·</span>
@@ -18,6 +18,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import ExecutorIcon from './ExecutorIcon.vue'
 import { executorMeta } from '../labels'
 import type { ExecutorKind } from '../types'
 
@@ -37,7 +38,7 @@ const meta = computed(() => executorMeta(props.kind))
 <style scoped>
 .normnet-exec {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.3rem;
   padding: 0.1em 0.5em;
   border-radius: 999px;
@@ -52,7 +53,7 @@ const meta = computed(() => executorMeta(props.kind))
   padding: 0.05em 0.4em;
 }
 .normnet-exec__icon {
-  font-size: 0.875em;
+  --normnet-icon-size: 1.05em;
 }
 .normnet-exec__advice {
   font-weight: 400;

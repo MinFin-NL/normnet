@@ -37,6 +37,36 @@ export function useRun() {
   const connectionError = ref<string | null>(null)
   const deciding = ref(false)
 
+  /* ── Playback ────────────────────────────────────────────────────────────
+     The engine emits a round in milliseconds; a reader needs seconds. So the
+     stream is not rendered as it arrives — it is queued, and drained at a pace
+     a person can follow. Nothing is dropped and nothing is faked: the queue is
+     the real log, played at reading speed, and `backlog` says honestly how far
+     behind the picture is. Speed 0 means "no pacing" — drain as fast as it
+     comes, which is what an impatient second viewing wants. */
+  const speed = ref(1)
+  const paused = ref(false)
+  const backlog = ref(0)
+
+  /** How long a freshly rendered event should stay the newest thing on screen,
+   *  before the next one lands. Weighted by how much there is to read. */
+  const DWELL: Record<string, number> = {
+    run_started: 400,
+    round_started: 1100,
+    transition_fired: 800,
+    decision_requested: 700,
+    decision_made: 1600,
+    violation: 1800,
+    awaiting_human: 200,
+    human_decided: 400,
+    human_timeout: 400,
+    run_finished: 600,
+    run_error: 200,
+  }
+
+  const queue: RunEvent[] = []
+  let drainTimer: number | null = null
+
   let source: EventSource | null = null
   let cursor = 0
   let retry: number | null = null
@@ -274,7 +304,60 @@ export function useRun() {
         push({ type: 'error', seq: event.seq, message: d.message })
         break
     }
-    cursor = Math.max(cursor, event.seq + 1)
+  }
+
+  /** Take one event off the queue, render it, and schedule the next. */
+  function drain() {
+    drainTimer = null
+    if (paused.value) return
+    const event = queue.shift()
+    if (!event) {
+      backlog.value = 0
+      return
+    }
+    apply(event)
+    backlog.value = queue.length
+    if (!queue.length) return
+    const wait = speed.value === 0 ? 0 : (DWELL[event.kind] ?? 500) / speed.value
+    drainTimer = window.setTimeout(drain, wait)
+  }
+
+  function enqueue(event: RunEvent) {
+    // The cursor tracks what has been *received*, not what has been shown, so a
+    // reconnect never re-sends events that are already sitting in the queue.
+    if (event.seq < cursor) return
+    cursor = event.seq + 1
+    queue.push(event)
+    backlog.value = queue.length
+    if (drainTimer === null && !paused.value) drain()
+  }
+
+  /** Give up on pacing and show everything that has arrived. */
+  function skipAhead() {
+    if (drainTimer !== null) {
+      window.clearTimeout(drainTimer)
+      drainTimer = null
+    }
+    paused.value = false
+    while (queue.length) apply(queue.shift()!)
+    backlog.value = 0
+  }
+
+  function setPaused(next: boolean) {
+    paused.value = next
+    if (next) {
+      if (drainTimer !== null) {
+        window.clearTimeout(drainTimer)
+        drainTimer = null
+      }
+    } else if (drainTimer === null) {
+      drain()
+    }
+  }
+
+  function setSpeed(next: number) {
+    speed.value = next
+    if (next === 0) skipAhead()
   }
 
   function connect(id: string) {
@@ -287,7 +370,7 @@ export function useRun() {
     const onEvent = (e: MessageEvent) => {
       connectionError.value = null
       try {
-        apply(JSON.parse(e.data) as RunEvent)
+        enqueue(JSON.parse(e.data) as RunEvent)
       } catch {
         /* a malformed frame must not kill the stream */
       }
@@ -309,6 +392,10 @@ export function useRun() {
   }
 
   function close() {
+    if (drainTimer !== null) {
+      window.clearTimeout(drainTimer)
+      drainTimer = null
+    }
     if (retry !== null) {
       window.clearTimeout(retry)
       retry = null
@@ -333,6 +420,9 @@ export function useRun() {
     facts.value = {}
     connectionError.value = null
     cursor = 0
+    queue.length = 0
+    backlog.value = 0
+    paused.value = false
     status.value = 'starting'
 
     const { run_id } = await api.startRun(body)
@@ -356,6 +446,7 @@ export function useRun() {
   return {
     runId, status, entries, pending, marking, activity, groundAtoms, facts,
     connectionError, deciding, violations, finished, isRunning, isBusy,
+    speed, paused, backlog, setPaused, setSpeed, skipAhead,
     start, decide, close,
   }
 }
