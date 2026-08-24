@@ -82,9 +82,13 @@
           </span>
         </h3>
       </header>
-      <p v-if="entry.concurrent" class="normnet-card__concurrent-note">
+      <p v-if="entry.concurrent && expert" class="normnet-card__concurrent-note">
         Deze stappen draaien parallel omdat het net zegt dat de tokens er voor
         beide zijn — niet omdat iemand eraan dacht ze parallel te zetten.
+      </p>
+      <p v-else-if="entry.concurrent" class="normnet-card__concurrent-note">
+        Deze stappen draaien tegelijk omdat de zaak op beide plekken tegelijk
+        ligt — niet omdat iemand eraan dacht ze parallel te zetten.
       </p>
 
       <div v-for="t in entry.transitions" :key="t.id" class="normnet-transition">

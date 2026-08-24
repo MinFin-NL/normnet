@@ -1,6 +1,6 @@
 <template>
   <div class="normnet-side">
-    <!-- Where the tokens are right now -->
+    <!-- Where the case sits right now -->
     <section
       class="rvo-card rvo-card--outline rvo-card--padding-md normnet-panel"
       aria-labelledby="marking-heading"
@@ -19,7 +19,7 @@
           aria-haspopup="dialog"
           @click="graphOpen = true"
         >
-          Toon graafweergave
+          {{ expert ? 'Toon graafweergave' : 'Toon het hele proces' }}
         </button>
       </div>
       <p v-if="expert" class="normnet-panel__intro">

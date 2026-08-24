@@ -356,6 +356,7 @@ run_ui.sh               start the inspector without a Node process
 package.json            `npm run dev` — API + Vite together
 tests/scripted.py       scripted stand-ins for the model, tests only
 docs/LPPN.md            the paper, what's implemented, and what isn't
+docs/roadmap.md         planned features, with the design already settled
 docs/*.mmd              generated diagrams (`uv run run_demo.py --mermaid`)
 ```
 

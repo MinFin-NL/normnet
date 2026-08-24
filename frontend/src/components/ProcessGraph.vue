@@ -12,13 +12,20 @@
     <div class="normnet-graph__head">
       <div>
         <h2 id="graph-heading" class="rvo-heading rvo-heading--margin-3 normnet-graph__title">
-          Het proces als graaf
+          {{ expert ? 'Het proces als graaf' : 'Het hele proces in één beeld' }}
         </h2>
-        <p class="normnet-graph__lead">
+        <p v-if="expert" class="normnet-graph__lead">
           Dezelfde zaak, maar dan het hele model in één beeld: <strong>cirkels</strong>
-          zijn toestanden, <strong>blokken</strong> zijn stappen, en een pijl zegt
-          welke stap uit welke toestand mag volgen. De zaak zit waar de
+          zijn places, <strong>blokken</strong> zijn transities, en een pijl zegt
+          welke transitie uit welke place mag volgen. De marking staat waar de
           <span class="normnet-graph__token-inline" aria-hidden="true" /> staat.
+        </p>
+        <p v-else class="normnet-graph__lead">
+          Het hele proces in één beeld. De <strong>cirkels</strong> zijn plekken waar
+          een zaak kan liggen, de <strong>blokken</strong> zijn stappen. Een pijl zegt
+          welke stap uit welke plek mag volgen. Het groene bolletje
+          <span class="normnet-graph__token-inline" aria-hidden="true" /> laat zien
+          waar uw zaak nu ligt.
         </p>
       </div>
       <button
@@ -149,12 +156,19 @@
       <div class="normnet-graph__legend-block">
         <h3 class="normnet-graph__legend-title">Hoe ver is de zaak?</h3>
     <ul class="normnet-graph__legend">
-      <li><span class="normnet-graph__key normnet-graph__key--marked" aria-hidden="true" /> Hier staat de zaak nu</li>
+      <li><span class="normnet-graph__key normnet-graph__key--marked" aria-hidden="true" /> Hier ligt de zaak nu</li>
       <li><span class="normnet-graph__key normnet-graph__key--done" aria-hidden="true" /> Stap is gedaan</li>
       <li><span class="normnet-graph__key normnet-graph__key--busy" aria-hidden="true" /> Stap draait nu</li>
       <li><span class="normnet-graph__key normnet-graph__key--human" aria-hidden="true" /> Wacht op uw besluit</li>
-      <li><span class="normnet-graph__key normnet-graph__key--todo" aria-hidden="true" /> Nog niet geweest</li>
+      <li><span class="normnet-graph__key normnet-graph__key--todo" aria-hidden="true" /> Nog niet aan de beurt</li>
     </ul>
+        <!-- The count inside a dot is the one thing in the drawing that has no
+             legend key of its own, and it is exactly what an AND-split makes
+             happen — so it is explained in words rather than drawn again. -->
+        <p class="normnet-graph__legend-note">
+          Staat er een getal in het bolletje, dan ligt de zaak op meerdere plekken
+          tegelijk — het proces doet die stappen naast elkaar.
+        </p>
       </div>
     </div>
   </dialog>
@@ -164,6 +178,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { EXECUTORS, executorMeta, netLabel } from '../labels'
 import type { NetShape, TransitionActivity } from '../types'
+import { useViewMode } from '../useViewMode'
 
 const props = defineProps<{
   open: boolean
@@ -173,6 +188,8 @@ const props = defineProps<{
   gated: string[]
 }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
+
+const { expert } = useViewMode()
 
 const dialog = ref<HTMLDialogElement | null>(null)
 
@@ -356,8 +373,8 @@ function wrap(label: string): string[] {
 const summary = computed(() => {
   const here = placeNodes.value.filter((p) => p.tokens > 0).map((p) => p.label)
   return here.length
-    ? `Procesgraaf. De zaak staat nu bij: ${here.join(', ')}.`
-    : 'Procesgraaf van het claimproces.'
+    ? `Overzicht van het hele proces. De zaak ligt nu bij: ${here.join(', ')}.`
+    : 'Overzicht van het hele claimproces.'
 })
 </script>
 
@@ -575,6 +592,11 @@ const summary = computed(() => {
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 1rem 1.5rem;
   padding-block-start: 0.75rem;
+}
+.normnet-graph__legend-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--normnet-color-text-muted, #4b5563);
 }
 .normnet-graph__legend-title {
   margin: 0 0 0.35rem;

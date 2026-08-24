@@ -78,7 +78,7 @@
             </ul>
             <p class="normnet-intro__executors-note">
               Deze aanduiding staat bij élke stap — in de tijdlijn, in het
-              overzicht links en in de graafweergave.
+              overzicht links en in de plaat van het hele proces.
             </p>
             <p>
               Bij een stap waar een mens moet beslissen stopt het proces en wacht
