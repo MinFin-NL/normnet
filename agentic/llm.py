@@ -10,9 +10,24 @@ step — scoring fraud, checking a warranty window, writing a payment — stays
 deterministic code in :mod:`agentic.handlers`, and that is deliberate: the
 model is used where judgement is needed, not where arithmetic is.
 
-Two backends, both language models, differing only in how they are prompted:
+Which model, and where it runs:
 
-``ollama``   the process as it should be built — the role, plus the generated
+``ollama``   a local model via langchain-ollama — a developer's own machine.
+             Configured with PETRI_OLLAMA_URL and PETRI_OLLAMA_MODEL.
+``azure``    Azure OpenAI, the hosted deployment this project runs on. Picked
+             automatically when AZURE_OPENAI_ENDPOINT is set, which is how the
+             container app is configured — a container has no local Ollama to
+             talk to. Reads the same variable names as the invulhulp backend:
+
+                 AZURE_OPENAI_ENDPOINT     resource endpoint (selects this backend)
+                 AZURE_OPENAI_API_KEY      API key
+                 AZURE_OPENAI_DEPLOYMENT   deployment name (default below)
+                 AZURE_OPENAI_API_VERSION  API version (default below)
+
+And how it is prompted, which is the only difference between the two audit
+targets — same model, same net, same norms:
+
+``auto``     the process as it should be built: the role, plus the generated
              norm block, plus a hard instruction to judge on recorded facts.
 ``naive``    the same model with a plausibly-but-badly written instruction on
              top: keep the customer happy, don't make them wait. Nothing exotic
@@ -31,6 +46,9 @@ from typing import Mapping, Sequence
 
 DEFAULT_OLLAMA_MODEL = "qwen2.5:3b"
 DEFAULT_OLLAMA_URL = "http://192.168.1.66:11434"
+
+DEFAULT_AZURE_DEPLOYMENT = "gpt-5.3-chat"
+DEFAULT_AZURE_API_VERSION = "2025-04-01-preview"
 
 
 class BackendUnavailable(RuntimeError):
@@ -172,12 +190,24 @@ def _causes(exc: BaseException) -> list[BaseException]:
 
 
 def _setup_help(exc: BaseException) -> str:
+    """What to do about it — for the provider this deployment is pointed at, not
+    a generic apology."""
+    head = (
+        f"no language model available ({exc.__class__.__name__}: {exc}). "
+        f"NormNet makes every judgement call with a model, so it needs one."
+    )
+    if azure_configured():
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", DEFAULT_AZURE_DEPLOYMENT)
+        return (
+            f"{head}\nAZURE_OPENAI_ENDPOINT is set, so the hosted deployment is "
+            f"the one in use. Check AZURE_OPENAI_API_KEY, and that deployment "
+            f"{deployment!r} exists at that endpoint (AZURE_OPENAI_DEPLOYMENT, "
+            f"AZURE_OPENAI_API_VERSION)."
+        )
     url = os.environ.get("PETRI_OLLAMA_URL", DEFAULT_OLLAMA_URL)
     model = os.environ.get("PETRI_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
     return (
-        f"no language model available ({exc.__class__.__name__}: {exc}). "
-        f"NormNet makes every judgement call with a local model, so it needs one. "
-        f"Start Ollama and pull the model:\n"
+        f"{head}\nStart Ollama and pull the model:\n"
         f"    ollama serve\n"
         f"    ollama pull {model}\n"
         f"Point NormNet at it with PETRI_OLLAMA_URL (now: {url}) and "
@@ -195,12 +225,51 @@ def _ollama(preamble: str = "", suffix: str = "") -> Backend:
     return ChatBackend(model, f"ollama:{model.model}{suffix}", preamble)
 
 
+def _azure(preamble: str = "", suffix: str = "") -> Backend:
+    from langchain_openai import AzureChatOpenAI
+
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", DEFAULT_AZURE_DEPLOYMENT)
+    model = AzureChatOpenAI(
+        azure_deployment=deployment,
+        azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
+        api_key=os.environ.get("AZURE_OPENAI_API_KEY", ""),
+        api_version=os.environ.get("AZURE_OPENAI_API_VERSION", DEFAULT_AZURE_API_VERSION),
+        # Deliberately unset, not a forgotten knob. A low temperature would suit
+        # an audit trail — the same claim ought to decide the same way twice —
+        # but both deployments behind this project reject the parameter: the
+        # chat-latest model accepts only its default, reasoning models take none
+        # at all. Sending one fails every call, which is worse than sampling.
+        temperature=None,
+    )
+    return ChatBackend(model, f"azure:{deployment}{suffix}", preamble)
+
+
+def _configured_model(preamble: str = "", suffix: str = "") -> Backend:
+    """The model this deployment actually has. Offering a choice between the two
+    would offer one that cannot work: the container has no Ollama on localhost,
+    and a laptop running the demo has no Azure key."""
+    return _azure(preamble, suffix) if azure_configured() else _ollama(preamble, suffix)
+
+
+def azure_configured() -> bool:
+    """True when the hosted deployment is available — the UI offers it instead
+    of Ollama, which only exists on a developer's own machine."""
+    return bool(os.environ.get("AZURE_OPENAI_ENDPOINT"))
+
+
 def get_backend(kind: str = "auto") -> Backend:
-    """Resolve a backend. Both are language models; there is nothing to fall
-    back to, so an unreachable model is an error and says how to fix it."""
+    """Resolve a backend. Every one of them is a language model; there is
+    nothing to fall back to, so an unreachable model is an error that says how
+    to fix it rather than a silent substitution."""
     try:
         if kind == "naive":
-            return _ollama(NAIVE_PREAMBLE, " (naïef geïnstrueerd)")
-        return _ollama()
+            # Naivety is a prompt, not a provider: it wraps whichever model this
+            # deployment actually has, so the two audit targets stay comparable.
+            return _configured_model(NAIVE_PREAMBLE, " (naïef geïnstrueerd)")
+        if kind == "azure":
+            return _azure()
+        if kind == "ollama":
+            return _ollama()
+        return _configured_model()
     except Exception as exc:  # noqa: BLE001 — a missing package lands here too
         raise BackendUnavailable(_setup_help(exc)) from exc

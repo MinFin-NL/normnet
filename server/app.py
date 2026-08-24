@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -27,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agentic.handlers import executor_of
+from agentic.llm import DEFAULT_AZURE_DEPLOYMENT, azure_configured
 from process.claims import SCENARIOS, as_is_net, to_be_net
 from process.norms import AUTO_SETTLE_LIMIT_EUR, FRAUD_REFERRAL_SCORE, claims_declarative_layer
 from server.runner import NETS, RunRegistry
@@ -80,17 +82,10 @@ def bootstrap() -> dict:
             }
             for key, c in SCENARIOS.items()
         ],
-        # Both are the same local model; they differ only in the system prompt
-        # they are given. Every keuzepunt in this process is a model call —
-        # there is no rules-engine target to pick.
-        "backends": [
-            {"id": "ollama", "label": "Taalmodel (lokaal, correct geïnstrueerd)",
-             "hint": "Het lokale model met de rol én het gegenereerde normen-blok. "
-                     "Vereist een draaiende Ollama-server; geen externe API."},
-            {"id": "naive", "label": "Taalmodel (naïef geïnstrueerd)",
-             "hint": "Hetzelfde model, met er bovenop een gangbare maar slechte instructie: "
-                     "hou de klant tevreden. Om te laten zien dat de audit werkt."},
-        ],
+        # Two targets, one model: they differ only in the system prompt they are
+        # given. Every keuzepunt in this process is a model call — there is no
+        # rules-engine target to pick.
+        "backends": _backend_options(),
         # This API serves the Dutch inspector only, so the norms go out in Dutch
         # and fall back to the engine's English if a translation is missing. The
         # prompts the agent receives keep using the English `guidance`.
@@ -111,6 +106,31 @@ def bootstrap() -> dict:
         },
         "nets": {name: _net_shape(fn()) for name, fn in NETS.items()},
     }
+
+
+def _backend_options() -> list[dict]:
+    """The two audit targets, named for the model that will actually answer.
+
+    Which provider that is, is not a choice worth offering: the hosted
+    deployment has no Ollama on localhost, and a laptop running the demo has no
+    Azure key. So the *provider* is detected and the *prompt* is the option.
+    """
+    if azure_configured():
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", DEFAULT_AZURE_DEPLOYMENT)
+        model = f"Azure OpenAI ({deployment})"
+        where = "Hetzelfde model als de invulhulp, binnen de Azure-omgeving van het ministerie."
+    else:
+        model = "Taalmodel (lokaal)"
+        where = "Draait volledig lokaal op een Ollama-server; geen externe API."
+    return [
+        # `auto` rather than a provider id: the frontend must not have to know
+        # which provider this deployment turned out to have.
+        {"id": "auto", "label": f"{model} — correct geïnstrueerd",
+         "hint": f"Het model met de rol én het gegenereerde normen-blok. {where}"},
+        {"id": "naive", "label": f"{model} — naïef geïnstrueerd",
+         "hint": "Hetzelfde model, met er bovenop een gangbare maar slechte instructie: "
+                 "hou de klant tevreden. Om te laten zien dat de audit werkt."},
+    ]
 
 
 def _net_shape(net) -> dict:

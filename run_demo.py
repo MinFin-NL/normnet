@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """NormNet — auditable business-process automation with LLMs, end to end.
 
-    python run_demo.py                     # full demo (needs a local Ollama model)
+    python run_demo.py                     # full demo, on whichever model is configured
+    python run_demo.py --backend ollama    # force the local Ollama model
+    python run_demo.py --backend azure     # force the hosted Azure OpenAI deployment
     python run_demo.py --backend naive     # the same model, badly instructed
     python run_demo.py --scenario pressure # run one case
     python run_demo.py --only audit        # just the Petri-style audit
@@ -270,8 +272,10 @@ def write_mermaid(as_is: PetriNet, to_be: PetriNet) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--backend", default="ollama", choices=["ollama", "naive"],
-                    help="both are the local model; they differ in the system prompt")
+    ap.add_argument("--backend", default="auto",
+                    choices=["auto", "ollama", "azure", "naive"],
+                    help="all of these are language models; `naive` is whichever "
+                         "model `auto` picks, with a deliberately bad system prompt")
     ap.add_argument("--scenario", default=None, choices=sorted(SCENARIOS))
     ap.add_argument("--only", default=None,
                     choices=["model", "norms", "rebuild", "execute", "compare", "audit"])

@@ -9,7 +9,8 @@ requires-python = ">=3.11"
 # the LangGraph execution layer, the local model, and the inspector.
 dependencies = [
     "langgraph>=1.0",
-    "langchain-ollama>=0.2",  # the decision backend — a local model, no hosted API
+    "langchain-ollama>=0.2",  # --backend ollama (a local model on a laptop)
+    "langchain-openai>=0.3",  # --backend azure  (the hosted Azure OpenAI deployment)
     # Inspector backend (server/). Only needed for the web UI, not for run_demo.py.
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",

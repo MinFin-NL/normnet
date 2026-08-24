@@ -107,7 +107,9 @@ const emit = defineEmits<{
 const { expert } = useViewMode()
 
 const scenario = ref(props.scenarios[0]?.id ?? 'standard')
-const backend = ref('ollama')
+// `auto` is the correctly instructed model, whichever provider this
+// deployment has — Azure in the container, Ollama on a laptop.
+const backend = ref('auto')
 const pressure = ref('')
 const humanInTheLoop = ref(true)
 
@@ -118,7 +120,7 @@ const backendHint = computed(
 
 /** In the simple view the three technical controls are not on screen, so their
  *  refs must not silently carry a value the user set earlier in expert mode —
- *  send the defaults instead. `ollama` is the correctly instructed model, which
+ *  send the defaults instead. `auto` is the correctly instructed model, which
  *  is the process as it is meant to run; the naive one is a demonstration and
  *  should never be reached by accident. `variant` is never exposed at all. */
 function payload() {
@@ -132,7 +134,7 @@ function payload() {
       }
     : {
         scenario: scenario.value,
-        backend: 'ollama',
+        backend: 'auto',
         variant: 'to_be',
         human_in_the_loop: true,
         pressure: '',

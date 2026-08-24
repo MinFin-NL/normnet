@@ -31,7 +31,7 @@ Anthropic's [Petri](https://www.anthropic.com/research/petri-open-source-auditin
 > opinion. See [`audit/petri_audit.py`](audit/petri_audit.py).
 
 ```bash
-ollama serve && ollama pull qwen2.5:3b   # NormNet judges with a local model
+ollama serve && ollama pull qwen2.5:3b   # a local model to judge with (or set AZURE_OPENAI_ENDPOINT)
 npm run dev                   # inspector with hot reload — API :8000, UI :5173
 uv run run_demo.py            # full walkthrough in the terminal
 uv run pytest tests/ -q       # 73 tests, no model needed
@@ -311,17 +311,26 @@ model; they differ only in the system prompt they are given.
 
 | `--backend` | What it is |
 |---|---|
-| `ollama` *(default)* | The role, plus the norm block generated from `process/norms.py`, plus "judge on the recorded facts". |
+| `auto` *(default)* | The role, plus the norm block generated from `process/norms.py`, plus "judge on the recorded facts". Runs on whichever provider is configured. |
 | `naive` | The same model with a plausible-but-bad instruction on top: keep the customer happy, don't make them wait. Exists so the audit has something to find. |
 
-**Every model call goes to a local Ollama server, never to an external
-provider.** Set `PETRI_OLLAMA_URL` (default `http://192.168.1.66:11434`) and
-optionally `PETRI_OLLAMA_MODEL` (default `qwen2.5:3b`). There is nothing to fall
-back to: with no model reachable, a run fails with setup instructions rather
-than quietly taking the first branch.
+Which provider answers is detected, not chosen — the two are mutually exclusive
+by design, since a container has no local Ollama and a laptop has no Azure key:
+
+| Provider | When it is used |
+|---|---|
+| `ollama` | A local model via `langchain-ollama`. Set `PETRI_OLLAMA_URL` (default `http://192.168.1.66:11434`) and optionally `PETRI_OLLAMA_MODEL` (default `qwen2.5:3b`). |
+| `azure` | The Azure OpenAI deployment this project runs on in the ministry's tenant — the same model the invulhulp project uses. Selected whenever `AZURE_OPENAI_ENDPOINT` is set; see `.env.azure.example`. |
+
+**Model calls never leave the machine or the tenant they are configured for.**
+On a laptop that means Ollama; on the deployed inspector it means Azure OpenAI
+inside the ministry's own subscription. There is no third-party API in either
+path, and nothing to fall back to: with no model reachable, a run fails with
+setup instructions for the provider it is pointed at rather than quietly taking
+the first branch.
 
 The test suite scripts the judgement calls instead (`tests/scripted.py`), so
-`pytest` needs no model running.
+`pytest` needs no model and no keys.
 
 ---
 
@@ -356,7 +365,7 @@ Python and could be lifted out on their own.
 ## Options
 
 ```
---backend {ollama,naive}
+--backend {auto,ollama,azure,naive}
 --scenario {standard,micro,out_of_warranty,pressure}
 --only {model,norms,rebuild,execute,compare,audit}
 --mermaid          write docs/*.mmd and exit
@@ -374,7 +383,31 @@ uv run <cmd>     # run inside it — no activation needed
 
 `uv sync` also handles the dev group (`pytest`). The Petri net engine
 (`petrinet/`) itself has no dependencies at all; the rest are for the LangGraph
-execution layer, the Ollama backend, and the inspector.
+execution layer, the model backends, and the inspector.
+
+## Deploy
+
+The inspector runs on Azure Container Apps in `rg-normnet-inno-d`, alongside the
+invulhulp deployment and pointing at the same `gpt-5.3-chat` deployment.
+
+```
+rg-normnet-inno-d
+├── acrnormnetinnod       the image registry
+├── cae-normnet-inno-d    the Container Apps environment
+└── ca-normnet-inno-d     the app — API and SPA in one container
+```
+
+One container, because the API already serves the built frontend; see
+`Dockerfile`. `azure-pipelines.yml` builds and deploys it on a push to `main`,
+reading endpoint, key and the two allowed IP ranges from the `normnet-secrets`
+variable group.
+
+Ingress is restricted to the ministry's own IP ranges — the app itself has no
+login, so that restriction is the only thing standing in front of it. Anyone
+who can reach it can start runs against the model. It scales `min=max=1`
+deliberately: a run lives in one replica's memory and its SSE stream is pinned
+to that replica, so a second replica would strand clients on a process that
+never saw their run.
 
 ## Extending it
 
