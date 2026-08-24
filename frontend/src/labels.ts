@@ -1,3 +1,5 @@
+import type { ExecutorKind } from './types'
+
 /** Dutch labels for the snake_case keys the engine writes into the case file
  *  (`agentic/handlers.py`). The engine names them for the norms that read them,
  *  not for a reader — so the simple view translates, and anything not in this
@@ -178,3 +180,44 @@ export function decisionLabel(id: string): string {
   return DECISION_LABELS[id] ?? id
 }
 
+
+/* ── Who performs a step ─────────────────────────────────────────────────── */
+
+/** The three kinds of executor, in the words a reader needs. This is the
+ *  distinction the whole inspector is built to make visible: a step is either
+ *  vastgelegde code, een taalmodel dat oordeelt, or een mens die tekent. */
+export interface ExecutorMeta {
+  label: string
+  short: string
+  icon: string
+  /** one line, for a tooltip and the legend */
+  explanation: string
+}
+
+export const EXECUTORS: Record<ExecutorKind, ExecutorMeta> = {
+  deterministic: {
+    label: 'Vastgelegde regel',
+    short: 'Regel',
+    icon: '⚙',
+    explanation:
+      'Uitgevoerd door code die is vastgelegd: dezelfde invoer geeft altijd dezelfde uitkomst. Geen taalmodel, geen mens.',
+  },
+  llm: {
+    label: 'Taalmodel',
+    short: 'Model',
+    icon: '◆',
+    explanation:
+      'Hier had het proces meerdere toegestane vervolgstappen. Een taalmodel heeft gekozen en die keuze gemotiveerd.',
+  },
+  human: {
+    label: 'Mens',
+    short: 'Mens',
+    icon: '☻',
+    explanation:
+      'Een mens neemt dit besluit. Het proces staat hier werkelijk stil tot er iemand tekent.',
+  },
+}
+
+export function executorMeta(kind: ExecutorKind): ExecutorMeta {
+  return EXECUTORS[kind] ?? EXECUTORS.deterministic
+}

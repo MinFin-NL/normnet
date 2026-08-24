@@ -68,7 +68,7 @@
           <g
             v-for="t in transitionNodes"
             :key="t.id"
-            :class="['normnet-graph__t', `is-${t.state}`]"
+            :class="['normnet-graph__t', `is-${t.state}`, `is-by-${t.executor}`]"
           >
             <rect
               :x="t.x - T_W / 2"
@@ -77,6 +77,22 @@
               :height="T_H"
               rx="4"
             />
+            <!-- Who performs the step, as a channel of its own: the fill is
+                 already spent on progress, so this is a stripe on the leading
+                 edge plus a glyph — colour never carries it alone. -->
+            <rect
+              class="normnet-graph__t-stripe"
+              :x="t.x - T_W / 2"
+              :y="t.y - T_H / 2"
+              width="5"
+              :height="T_H"
+            />
+            <text
+              class="normnet-graph__t-glyph"
+              :x="t.x + T_W / 2 - 8"
+              :y="t.y - T_H / 2 + 12"
+              text-anchor="end"
+            >{{ t.glyph }}</text>
             <text :x="t.x" :y="t.y" text-anchor="middle" dominant-baseline="middle">
               <tspan
                 v-for="(line, i) in t.lines"
@@ -116,6 +132,22 @@
       </svg>
     </div>
 
+    <!-- Two legends, because the graph carries two independent things: how far
+         the case has got, and who performs each step. -->
+    <div class="normnet-graph__legends">
+      <div class="normnet-graph__legend-block">
+        <h3 class="normnet-graph__legend-title">Wie voert de stap uit?</h3>
+        <ul class="normnet-graph__legend normnet-graph__legend--exec">
+          <li v-for="(meta, kind) in EXECUTORS" :key="kind">
+            <span class="normnet-graph__exec-key" :class="`is-by-${kind}`" aria-hidden="true">
+              {{ meta.icon }}
+            </span>
+            <span><strong>{{ meta.label }}</strong> — {{ meta.explanation }}</span>
+          </li>
+        </ul>
+      </div>
+      <div class="normnet-graph__legend-block">
+        <h3 class="normnet-graph__legend-title">Hoe ver is de zaak?</h3>
     <ul class="normnet-graph__legend">
       <li><span class="normnet-graph__key normnet-graph__key--marked" aria-hidden="true" /> Hier staat de zaak nu</li>
       <li><span class="normnet-graph__key normnet-graph__key--done" aria-hidden="true" /> Stap is gedaan</li>
@@ -123,12 +155,14 @@
       <li><span class="normnet-graph__key normnet-graph__key--human" aria-hidden="true" /> Wacht op uw besluit</li>
       <li><span class="normnet-graph__key normnet-graph__key--todo" aria-hidden="true" /> Nog niet geweest</li>
     </ul>
+      </div>
+    </div>
   </dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { netLabel } from '../labels'
+import { EXECUTORS, executorMeta, netLabel } from '../labels'
 import type { NetShape, TransitionActivity } from '../types'
 
 const props = defineProps<{
@@ -233,7 +267,15 @@ const transitionNodes = computed(() =>
           : info?.busy
             ? 'busy'
             : 'todo'
-      return { id: t.id, state, lines: wrap(netLabel(t.id, t.label)), ...LAYOUT[t.id] }
+      const executor = t.executor ?? 'deterministic'
+      return {
+        id: t.id,
+        state,
+        executor,
+        glyph: executorMeta(executor).icon + (t.llm_advises ? '◆' : ''),
+        lines: wrap(netLabel(t.id, t.label)),
+        ...LAYOUT[t.id],
+      }
     }),
 )
 
@@ -503,5 +545,77 @@ const summary = computed(() => {
 .normnet-graph__key--human {
   border-color: var(--normnet-color-human, #ffb612);
   background: #fff3d6;
+}
+
+/* ── who performs a step ───────────────────────────────────────────────── */
+.normnet-graph__t-stripe {
+  stroke: none;
+  fill: #94a3b8;
+}
+.normnet-graph__t-glyph {
+  font-size: 10px;
+  fill: #64748b;
+}
+.normnet-graph__t.is-by-llm .normnet-graph__t-stripe {
+  fill: #7c3aed;
+}
+.normnet-graph__t.is-by-llm .normnet-graph__t-glyph {
+  fill: #5b2d90;
+}
+.normnet-graph__t.is-by-human .normnet-graph__t-stripe {
+  fill: #d9930b;
+}
+.normnet-graph__t.is-by-human .normnet-graph__t-glyph {
+  fill: #8f5c2c;
+}
+
+.normnet-graph__legends {
+  inline-size: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 1rem 1.5rem;
+  padding-block-start: 0.75rem;
+}
+.normnet-graph__legend-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.normnet-graph__legend--exec {
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-block-start: 0;
+}
+.normnet-graph__legend--exec li {
+  align-items: start;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.normnet-graph__exec-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  font-size: 0.75rem;
+  color: #334155;
+  background: #f1f5f9;
+}
+.normnet-graph__exec-key.is-by-llm {
+  color: #5b2d90;
+  background: #f4ecff;
+}
+.normnet-graph__exec-key.is-by-human {
+  color: #8f5c2c;
+  background: #fff4d9;
+}
+
+@media (max-width: 640px) {
+  .normnet-graph__legends {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

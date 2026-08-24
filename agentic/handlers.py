@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
+from petrinet.core import Transition
 from process.claims import Claim
 
 Facts = dict[str, object]
@@ -216,3 +217,49 @@ def describe_decision(decision_id: str, claim: Claim, facts: Mapping[str, object
         f"Facts recorded so far: {dict(facts)}\n\n"
         f"Which transition should fire next?"
     )
+
+
+# ------------------------------------------------- who executes a step
+
+#: Every transition that is one side of a declared choice. Reaching one of these
+#: means the process had options and something had to *judge* — which is the
+#: only place a language model is used.
+DECIDED_TRANSITIONS: frozenset[str] = frozenset().union(*DECISION_POINTS)
+
+
+@dataclass(frozen=True)
+class Executor:
+    """Who actually performs a step, and whether a model advised on it.
+
+    Three kinds, and the distinction is the point of the whole project:
+
+    ``deterministic``  coded logic in this module. No model, no person, same
+                       input always the same output — a fraud score, a warranty
+                       window, a payment instruction. Auditable by reading it.
+    ``llm``            a language model chose between the transitions the net
+                       allowed. Judgement, not arithmetic.
+    ``human``          a person commits the step. The net marks it
+                       ``human_in_loop`` (or, in the as-is model, the step is
+                       simply someone's job) and the process genuinely blocks.
+
+    ``llm_advises`` is set on a human step the model prepared a recommendation
+    for: the model did the work, the person carries the decision.
+    """
+
+    kind: str
+    llm_advises: bool
+
+    def as_dict(self) -> dict:
+        return {"executor": self.kind, "llm_advises": self.llm_advises}
+
+
+def executor_of(t: Transition) -> Executor:
+    advises = t.id in DECIDED_TRANSITIONS
+    if str(t.meta.get("autonomy", "")) == "human_in_loop":
+        return Executor("human", advises)
+    # The as-is net has no agents at all: every step is someone's job there.
+    if not t.meta.get("agent"):
+        return Executor("human", advises)
+    if advises:
+        return Executor("llm", False)
+    return Executor("deterministic", False)

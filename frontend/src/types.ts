@@ -37,11 +37,19 @@ export interface NormInfo {
   guidance: string
 }
 
+/** Who performs a step. The single most important thing about a step in this
+ *  inspector, so it is a field of its own rather than something inferred from
+ *  `actor` or `autonomy`. Mirrors `agentic.handlers.Executor`. */
+export type ExecutorKind = 'deterministic' | 'llm' | 'human'
+
 export interface TransitionInfo {
   id: string
   label: string
   actor: string
   autonomy: string
+  executor: ExecutorKind
+  /** set on a human step a language model prepared the recommendation for */
+  llm_advises: boolean
   tools: string[]
   inputs: string[]
   outputs: string[]
@@ -71,6 +79,8 @@ export interface TransitionActivity {
   /** what the step produced, in Dutch (`Outcome.note_nl`) */
   note: string
   actor: string
+  executor?: ExecutorKind
+  llmAdvises?: boolean
 }
 
 export interface PendingDecision {
@@ -137,6 +147,8 @@ export interface StepEntry {
     label: string
     actor: string
     autonomy: string
+    executor: ExecutorKind
+    llmAdvises: boolean
     tools: string[]
     note: string
     hours: number

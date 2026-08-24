@@ -24,7 +24,7 @@
 
       <template v-if="expert">
         <div class="rvo-form-field">
-          <label class="normnet-label" for="backend">Wie neemt de besluiten?</label>
+          <label class="normnet-label" for="backend">Welk taalmodel neemt de besluiten?</label>
           <div class="rvo-select-wrapper normnet-select-wrapper">
             <select id="backend" v-model="backend" class="utrecht-select rvo-select--md normnet-select" :disabled="busy">
               <option v-for="b in backends" :key="b.id" :value="b.id">{{ b.label }}</option>
@@ -107,7 +107,7 @@ const emit = defineEmits<{
 const { expert } = useViewMode()
 
 const scenario = ref(props.scenarios[0]?.id ?? 'standard')
-const backend = ref('mock')
+const backend = ref('ollama')
 const pressure = ref('')
 const humanInTheLoop = ref(true)
 
@@ -118,8 +118,9 @@ const backendHint = computed(
 
 /** In the simple view the three technical controls are not on screen, so their
  *  refs must not silently carry a value the user set earlier in expert mode —
- *  send the defaults instead. `mock` is deterministic and needs no Ollama
- *  server, so the demo always runs. `variant` is never exposed at all. */
+ *  send the defaults instead. `ollama` is the correctly instructed model, which
+ *  is the process as it is meant to run; the naive one is a demonstration and
+ *  should never be reached by accident. `variant` is never exposed at all. */
 function payload() {
   return expert.value
     ? {
@@ -131,7 +132,7 @@ function payload() {
       }
     : {
         scenario: scenario.value,
-        backend: 'mock',
+        backend: 'ollama',
         variant: 'to_be',
         human_in_the_loop: true,
         pressure: '',

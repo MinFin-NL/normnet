@@ -8,8 +8,16 @@
           Besluit: {{ expert ? entry.decisionId : decisionLabel(entry.decisionId) }}
           <span class="normnet-card__round">ronde {{ entry.round }}</span>
         </h3>
-        <span v-if="expert" class="rvo-tag rvo-tag--info rvo-tag--pill">{{ entry.backend }}</span>
+        <span class="normnet-card__who">
+          <ExecutorBadge kind="llm" />
+          <code v-if="expert" class="normnet-card__backend">{{ entry.backend }}</code>
+        </span>
       </header>
+      <p class="normnet-card__who-line">
+        Op dit punt stond meer dan één vervolgstap open. Een <strong>taalmodel</strong>
+        heeft gekozen<template v-if="entry.human || entry.awaitingHuman">, maar een
+        <strong>mens</strong> beslist</template>.
+      </p>
 
       <p v-if="!entry.choice" class="normnet-card__pending">
         Het model is aan het nadenken…
@@ -83,16 +91,12 @@
         <div class="normnet-transition__head">
           <span class="normnet-transition__label">{{ netLabel(t.id, t.label) }}</span>
           <code v-if="expert" class="normnet-transition__id">{{ t.id }}</code>
-          <span
-            class="rvo-tag rvo-tag--pill"
-            :class="t.autonomy === 'human_in_loop' ? 'rvo-tag--warning' : 'rvo-tag--success'"
-          >
-            {{ t.autonomy === 'human_in_loop' ? 'mens beslist' : 'autonoom' }}
-          </span>
+          <ExecutorBadge :kind="t.executor" :llm-advises="t.llmAdvises" />
         </div>
         <p class="normnet-transition__actor">
           <span class="normnet-visually-hidden">Uitgevoerd door</span>
           {{ actorLabel(t.actor) }}
+          <span class="normnet-transition__how">· {{ executorMeta(t.executor).explanation }}</span>
           <template v-if="expert && t.tools.length">
             · gereedschap:
             <code v-for="tool in t.tools" :key="tool">{{ tool }}</code>
@@ -183,13 +187,24 @@
     <div class="normnet-item__marker normnet-item__marker--violation" aria-hidden="true">!</div>
     <article class="rvo-alert rvo-alert--error rvo-alert--padding-md normnet-card">
       <h3 class="normnet-card__title">Fout</h3>
-      <p>{{ entry.message }}</p>
+      <!-- The engine's errors carry setup instructions on their own lines —
+           "start ollama", "pull this model" — so the line breaks are content. -->
+      <p class="normnet-card__error">{{ entry.message }}</p>
     </article>
   </li>
 </template>
 
 <script setup lang="ts">
-import { actorLabel, decisionLabel, factLabel, factValue, isKnownFact, netLabel } from '../labels'
+import ExecutorBadge from './ExecutorBadge.vue'
+import {
+  actorLabel,
+  decisionLabel,
+  executorMeta,
+  factLabel,
+  factValue,
+  isKnownFact,
+  netLabel,
+} from '../labels'
 import type { TimelineEntry } from '../types'
 import { useViewMode } from '../useViewMode'
 
@@ -431,5 +446,31 @@ code {
   padding-inline-start: 1.25rem;
   columns: 2;
   font-size: 0.8125rem;
+}
+
+.normnet-card__who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.normnet-card__backend {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 0.6875rem;
+  color: var(--normnet-color-text-muted, #4b5563);
+}
+.normnet-card__who-line {
+  margin: 0 0 0.6rem;
+  font-size: 0.8125rem;
+  color: var(--normnet-color-text-muted, #4b5563);
+}
+/* The explanation of the badge, one line, muted: it is there for the first
+   read and must not compete with the note the step produced. */
+.normnet-transition__how {
+  color: var(--normnet-color-text-subtle, #64748b);
+}
+.normnet-card__error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>

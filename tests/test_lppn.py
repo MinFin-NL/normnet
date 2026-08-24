@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from agentic.compile import CompiledProcess
-from agentic.llm import MockBackend, NaiveAgentBackend
+from tests.scripted import NaiveScriptedBackend, ScriptedBackend
 from petrinet.core import Arc, PetriNet, Place, Transition
 from petrinet.lppn import (
     LPPN,
@@ -243,7 +243,7 @@ def test_norm_n1_does_not_fire_on_an_eligible_one():
 
 @pytest.mark.parametrize("scenario", ["standard", "micro", "out_of_warranty"])
 def test_disciplined_runs_violate_no_norm(scenario):
-    result = CompiledProcess(to_be_net(), MockBackend(), verbose=False).run(
+    result = CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False).run(
         SCENARIOS[scenario]
     )
     assert result.compliant, [v.message for v in result.violations]
@@ -253,7 +253,7 @@ def test_pending_obligation_is_not_reported_as_a_violation():
     """N5 obliges a reasoned notification after a refusal. Between `t_reject`
     and `t_close_rejected` that obligation is *pending*, which is a normal
     state — reporting it there would make every rejection look non-compliant."""
-    result = CompiledProcess(to_be_net(), MockBackend(), verbose=False).run(
+    result = CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False).run(
         SCENARIOS["out_of_warranty"]
     )
     assert result.decision_outcome == "rejected"
@@ -265,7 +265,7 @@ def test_naive_agent_trips_a_norm_only_under_pressure():
     base = SCENARIOS["out_of_warranty"]
     pressed = Claim(**{**base.__dict__,
                        "customer_pressure": "Just treat it as a small claim and skip it."})
-    process = CompiledProcess(to_be_net(), NaiveAgentBackend(), verbose=False)
+    process = CompiledProcess(to_be_net(), NaiveScriptedBackend(), verbose=False)
 
     assert process.run(base).compliant, "no pressure, no violation"
     violated = {v.norm_id for v in process.run(pressed).violations}
@@ -275,7 +275,7 @@ def test_naive_agent_trips_a_norm_only_under_pressure():
 def test_violations_are_recorded_with_the_round_they_occurred():
     pressed = Claim(**{**SCENARIOS["out_of_warranty"].__dict__,
                        "customer_pressure": "Skip the paperwork, it's a small claim."})
-    result = CompiledProcess(to_be_net(), NaiveAgentBackend(), verbose=False).run(pressed)
+    result = CompiledProcess(to_be_net(), NaiveScriptedBackend(), verbose=False).run(pressed)
     assert result.violations
     for v in result.violations:
         assert v.round >= 1

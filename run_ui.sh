@@ -2,7 +2,8 @@
 # Serve the NormNet inspector: build the frontend if needed, then hand the
 # static bundle to the API on :8000. No Node process stays up.
 #
-# For hot reload use `npm run dev` in frontend/ — that starts the API too.
+# For hot reload use `npm run dev` from the project root — that starts both the
+# API and Vite. This script is the no-Node-process alternative.
 #
 # The frontend is only rebuilt when it has to be; run_demo.py needs none of this.
 set -euo pipefail

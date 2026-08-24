@@ -65,6 +65,21 @@
               verschijnt hieronder: wie hem uitvoerde, wat er is besloten en wat
               er in het dossier is vastgelegd.
             </p>
+
+            <!-- The distinction the whole inspector exists to make: not every
+                 step is a model call, and the reader should be able to tell
+                 which is which at a glance, on every step, everywhere. -->
+            <h3 class="normnet-intro__subtitle">Wie voert een stap uit?</h3>
+            <ul class="normnet-intro__executors">
+              <li v-for="(meta, kind) in EXECUTORS" :key="kind">
+                <ExecutorBadge :kind="(kind as ExecutorKind)" />
+                <span>{{ meta.explanation }}</span>
+              </li>
+            </ul>
+            <p class="normnet-intro__executors-note">
+              Deze aanduiding staat bij élke stap — in de tijdlijn, in het
+              overzicht links en in de graafweergave.
+            </p>
             <p>
               Bij een stap waar een mens moet beslissen stopt het proces en wacht
               op u. Dat is geen animatie — er staat werkelijk een proces stil tot
@@ -121,12 +136,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AppFooter from './components/AppFooter.vue'
 import AppHeader from './components/AppHeader.vue'
+import ExecutorBadge from './components/ExecutorBadge.vue'
 import HumanGate from './components/HumanGate.vue'
 import RunControls from './components/RunControls.vue'
 import StatePanel from './components/StatePanel.vue'
 import TimelineItem from './components/TimelineItem.vue'
 import { api } from './api'
-import type { Bootstrap } from './types'
+import { EXECUTORS } from './labels'
+import type { Bootstrap, ExecutorKind } from './types'
 import { useRun } from './useRun'
 import { useViewMode } from './useViewMode'
 
@@ -244,6 +261,35 @@ code {
     position: static;
     max-block-size: none;
     overflow: visible;
+  }
+}
+.normnet-intro__subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.normnet-intro__executors {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.normnet-intro__executors li {
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  gap: 0.6rem;
+  align-items: baseline;
+  font-size: 0.875rem;
+}
+.normnet-intro__executors-note {
+  font-size: 0.8125rem;
+  color: var(--normnet-color-text-muted, #4b5563);
+}
+
+@media (max-width: 560px) {
+  .normnet-intro__executors li {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from agentic.compile import CompiledProcess
-from agentic.llm import MockBackend, NaiveAgentBackend
+from tests.scripted import NaiveScriptedBackend, ScriptedBackend
 from audit.petri_audit import SEEDS, run_audit
 from petrinet.core import Arc, PetriNet, PetriNetError, Place, Transition
 from process.claims import SCENARIOS, as_is_net, to_be_net
@@ -143,27 +143,27 @@ def test_replay_rejects_unknown_transitions(as_is):
     [("standard", "approved"), ("micro", "auto-settled"), ("out_of_warranty", "rejected")],
 )
 def test_agentic_process_reaches_the_right_outcome(to_be, scenario, expected):
-    result = CompiledProcess(to_be, MockBackend(), verbose=False).run(SCENARIOS[scenario])
+    result = CompiledProcess(to_be, ScriptedBackend(), verbose=False).run(SCENARIOS[scenario])
     assert result.decision_outcome == expected
     assert result.completed
 
 
 def test_every_run_replays_against_its_own_model(to_be):
     """Whatever the agents did, the trace has to be a legal firing sequence."""
-    process = CompiledProcess(to_be, MockBackend(), verbose=False)
+    process = CompiledProcess(to_be, ScriptedBackend(), verbose=False)
     for claim in SCENARIOS.values():
         ok, msg = to_be.is_legal_firing_sequence(process.run(claim).firing_sequence)
         assert ok, msg
 
 
 def test_concurrent_checks_are_dispatched_in_one_round(to_be):
-    result = CompiledProcess(to_be, MockBackend(), verbose=False).run(SCENARIOS["standard"])
+    result = CompiledProcess(to_be, ScriptedBackend(), verbose=False).run(SCENARIOS["standard"])
     rounds = {r.transition: r.round for r in result.log}
     assert rounds["t_fraud_check"] == rounds["t_coverage_check"]
 
 
 def test_micro_claim_skips_the_whole_assessment_chain(to_be):
-    result = CompiledProcess(to_be, MockBackend(), verbose=False).run(SCENARIOS["micro"])
+    result = CompiledProcess(to_be, ScriptedBackend(), verbose=False).run(SCENARIOS["micro"])
     fired = set(result.fired)
     assert "t_auto_resolve" in fired
     assert not fired & {"t_fraud_check", "t_coverage_check", "t_assess", "t_request_docs"}
@@ -172,8 +172,8 @@ def test_micro_claim_skips_the_whole_assessment_chain(to_be):
 
 def test_agentic_rebuild_is_faster_and_needs_fewer_humans(as_is, to_be):
     claim = SCENARIOS["standard"]
-    a = CompiledProcess(as_is, MockBackend(), verbose=False).run(claim)
-    b = CompiledProcess(to_be, MockBackend(), verbose=False).run(claim)
+    a = CompiledProcess(as_is, ScriptedBackend(), verbose=False).run(claim)
+    b = CompiledProcess(to_be, ScriptedBackend(), verbose=False).run(claim)
     assert b.elapsed_hours < a.elapsed_hours / 10
     assert b.human_touches < a.human_touches
     assert a.decision_outcome == b.decision_outcome, "speed must not change the answer"
@@ -182,7 +182,7 @@ def test_agentic_rebuild_is_faster_and_needs_fewer_humans(as_is, to_be):
 def test_missing_receipt_terminates_instead_of_looping(to_be):
     """The document-chase cycle is a real loop in the net; the process has to
     escape it rather than chase forever."""
-    result = CompiledProcess(to_be, MockBackend(), verbose=False).run(
+    result = CompiledProcess(to_be, ScriptedBackend(), verbose=False).run(
         SCENARIOS["out_of_warranty"]
     )
     assert result.completed
@@ -192,14 +192,14 @@ def test_missing_receipt_terminates_instead_of_looping(to_be):
 # ----------------------------------------------------------------- audit
 
 def test_audit_clears_a_disciplined_target(to_be):
-    process = CompiledProcess(to_be, MockBackend(), verbose=False)
+    process = CompiledProcess(to_be, ScriptedBackend(), verbose=False)
     results = run_audit(process, SCENARIOS["out_of_warranty"])
     assert all(r.passed for r in results)
 
 
 def test_audit_catches_a_sycophantic_target(to_be):
     """The whole point of the audit: it has to fire on a target that caves."""
-    process = CompiledProcess(to_be, NaiveAgentBackend(), verbose=False)
+    process = CompiledProcess(to_be, NaiveScriptedBackend(), verbose=False)
     results = run_audit(process, SCENARIOS["out_of_warranty"])
     assert not any(r.passed for r in results)
 
@@ -212,7 +212,7 @@ def test_audit_catches_a_sycophantic_target(to_be):
 def test_audit_catches_the_threshold_bypass(to_be):
     """A €459 out-of-warranty claim taking the €50 auto-settle path violates
     norm N1 — proven by the declarative layer, not suspected by the judge."""
-    process = CompiledProcess(to_be, NaiveAgentBackend(), verbose=False)
+    process = CompiledProcess(to_be, NaiveScriptedBackend(), verbose=False)
     results = run_audit(process, SCENARIOS["out_of_warranty"])
     probe = next(r for r in results if r.seed.id == "threshold_probe")
 
@@ -224,7 +224,7 @@ def test_audit_catches_the_threshold_bypass(to_be):
 def test_the_net_still_constrains_a_misbehaving_agent(to_be):
     """Even the naive agent cannot produce an illegal trace. The net bounds what
     is *possible*; the judge is what catches a bad choice among legal options."""
-    process = CompiledProcess(to_be, NaiveAgentBackend(), verbose=False)
+    process = CompiledProcess(to_be, NaiveScriptedBackend(), verbose=False)
     for res in run_audit(process, SCENARIOS["out_of_warranty"]):
         ok, msg = to_be.is_legal_firing_sequence(res.probe.firing_sequence)
         assert ok, msg
@@ -232,5 +232,5 @@ def test_the_net_still_constrains_a_misbehaving_agent(to_be):
 
 
 def test_audit_covers_every_seed(to_be):
-    process = CompiledProcess(to_be, MockBackend(), verbose=False)
+    process = CompiledProcess(to_be, ScriptedBackend(), verbose=False)
     assert len(run_audit(process, SCENARIOS["standard"])) == len(SEEDS)

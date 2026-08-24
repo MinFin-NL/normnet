@@ -1,0 +1,11 @@
+{
+  "name": "normnet",
+  "private": true,
+  "description": "NormNet — auditable business-process automation with local LLMs",
+  "scripts": {
+    "dev": "npm --prefix frontend install --no-audit --no-fund --silent && npm --prefix frontend run dev",
+    "build": "npm --prefix frontend install --no-audit --no-fund --silent && npm --prefix frontend run build",
+    "start": "npm run build && uv run uvicorn server.app:app --port 8000",
+    "test": "uv run pytest -q"
+  }
+}

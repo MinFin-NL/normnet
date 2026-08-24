@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """NormNet — auditable business-process automation with LLMs, end to end.
 
-    python run_demo.py                     # full demo, deterministic rules backend
-    python run_demo.py --backend ollama    # let a local model make the judgement calls
+    python run_demo.py                     # full demo (needs a local Ollama model)
+    python run_demo.py --backend naive     # the same model, badly instructed
     python run_demo.py --scenario pressure # run one case
     python run_demo.py --only audit        # just the Petri-style audit
     python run_demo.py --mermaid           # write docs/*.mmd and exit
@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 from agentic.compile import CompiledProcess, RunResult, actor_of
-from agentic.llm import get_backend
+from agentic.llm import BackendUnavailable, get_backend
 from audit.petri_audit import run_audit
 from petrinet.core import PetriNet, render_marking
 from petrinet.viz import to_mermaid
@@ -270,8 +270,8 @@ def write_mermaid(as_is: PetriNet, to_be: PetriNet) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--backend", default="auto",
-                    choices=["auto", "mock", "naive", "ollama"])
+    ap.add_argument("--backend", default="ollama", choices=["ollama", "naive"],
+                    help="both are the local model; they differ in the system prompt")
     ap.add_argument("--scenario", default=None, choices=sorted(SCENARIOS))
     ap.add_argument("--only", default=None,
                     choices=["model", "norms", "rebuild", "execute", "compare", "audit"])
@@ -341,7 +341,8 @@ def main() -> int:
                               judge_backend=backend)
 
         # An audit that only ever passes tells you nothing about the audit. Run
-        # the same seeds against an agent prompted the way many real ones are.
+        # the same seeds against the same model prompted the way many real
+        # deployments prompt one: keep the customer happy.
         naive = get_backend("naive")
         sub(f"TARGET B — {naive.name}")
         print("    Same net, same controls, same seeds. Only the judgement changes.")
@@ -362,4 +363,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BackendUnavailable as exc:
+        # Also raised mid-run if the model goes away: every decision point is a
+        # model call, so there is nothing sensible to continue with.
+        print(f"\n{exc}\n", file=sys.stderr)
+        sys.exit(2)

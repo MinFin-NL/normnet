@@ -58,6 +58,12 @@
             <span v-else-if="step.kind === 'branch'" class="normnet-tracker__tag">of</span>
           </p>
 
+          <!-- Who performs it, on every step — also before it has run, because
+               "wie doet dit straks?" is the question this panel is here for. -->
+          <p class="normnet-tracker__who">
+            <ExecutorBadge :kind="step.executor" :llm-advises="step.llmAdvises" small />
+          </p>
+
           <p v-if="step.state === 'todo'" class="normnet-visually-hidden">
             {{ STATE_TEXT.todo }}
           </p>
@@ -77,15 +83,22 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import ExecutorBadge from './ExecutorBadge.vue'
 import { actorLabel, PROCESS_STEPS } from '../labels'
-import type { TransitionActivity } from '../types'
+import type { ExecutorKind, NetShape, TransitionActivity } from '../types'
 
 const props = defineProps<{
+  /** the net, so a step can say who performs it before it has run */
+  net: NetShape
   /** per transition id: running, finished, and what it produced */
   activity: Record<string, TransitionActivity>
   /** transitions the run is currently blocked on, waiting for a person */
   gated: string[]
 }>()
+
+const byId = computed(
+  () => new Map(props.net.transitions.map((t) => [t.id, t])),
+)
 
 type StepState = 'done' | 'busy' | 'waiting-human' | 'skipped' | 'todo'
 
@@ -132,8 +145,13 @@ const steps = computed(() => {
             : 'todo'
 
     const info = doneVia ? props.activity[doneVia] : undefined
+    // The step that was actually taken, or — for a step still ahead — the
+    // first of its alternatives, which is enough to say who performs it.
+    const shape = byId.value.get(doneVia ?? step.transitions[0])
     return {
       ...step,
+      executor: (shape?.executor ?? 'deterministic') as ExecutorKind,
+      llmAdvises: !!shape?.llm_advises,
       state,
       // numbered over the route this case actually takes, so the last number
       // matches the "x van y" above rather than counting skipped steps
@@ -365,5 +383,8 @@ const percent = computed(() =>
   letter-spacing: 0.04em;
   color: var(--normnet-color-text-muted, #4b5563);
   vertical-align: 0.1em;
+}
+.normnet-tracker__who {
+  margin: 0.2rem 0 0;
 }
 </style>

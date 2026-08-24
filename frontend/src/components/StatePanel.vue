@@ -31,7 +31,7 @@
         Welke stap nu wordt uitgevoerd, wat er al af is en wat nog volgt.
       </p>
 
-      <ProcessTracker :activity="activity" :gated="gated" />
+      <ProcessTracker :net="net" :activity="activity" :gated="gated" />
 
       <ProcessGraph
         v-model:open="graphOpen"

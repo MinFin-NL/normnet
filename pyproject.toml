@@ -6,10 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 # The Petri net engine (petrinet/) has no dependencies at all. These are for
-# the LangGraph execution layer, the optional LLM backends, and the inspector.
+# the LangGraph execution layer, the local model, and the inspector.
 dependencies = [
     "langgraph>=1.0",
-    "langchain-ollama>=0.2",  # --backend ollama (the only LLM backend; fully local)
+    "langchain-ollama>=0.2",  # the decision backend — a local model, no hosted API
     # Inspector backend (server/). Only needed for the web UI, not for run_demo.py.
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",

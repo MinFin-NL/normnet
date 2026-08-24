@@ -20,13 +20,23 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agentic.compile import CompiledProcess
-from agentic.llm import MockBackend
 from process.claims import SCENARIOS, to_be_net
+from server import runner
 from server.app import app
+from tests.scripted import NaiveScriptedBackend, ScriptedBackend
+
+#: The API tests exercise the HTTP surface and the human gate, not the model.
+#: The server only knows language-model backends, so the ids it accepts are
+#: mapped onto their scripted stand-ins for the duration of a test.
+_SCRIPTED = {"naive": NaiveScriptedBackend, "ollama": ScriptedBackend}
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    monkeypatch.setattr(
+        runner, "get_backend",
+        lambda kind="auto": _SCRIPTED.get(kind, ScriptedBackend)(),
+    )
     return TestClient(app)
 
 
@@ -44,7 +54,7 @@ def wait_for(client, run_id: str, status: str, timeout: float = 20.0) -> dict:
 
 def test_emit_publishes_the_whole_lifecycle():
     seen: list[tuple[str, dict]] = []
-    CompiledProcess(to_be_net(), MockBackend(), verbose=False,
+    CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False,
                     emit=lambda k, v: seen.append((k, v))).run(SCENARIOS["standard"])
 
     kinds = {k for k, _ in seen}
@@ -56,7 +66,7 @@ def test_decision_events_carry_the_prompt_that_was_actually_sent():
     """A reviewer has to see the question, not only the answer — and the norm
     text in it must come from the norms, not a hand-written copy."""
     seen: list[tuple[str, dict]] = []
-    CompiledProcess(to_be_net(), MockBackend(), verbose=False,
+    CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False,
                     emit=lambda k, v: seen.append((k, v))).run(SCENARIOS["standard"])
 
     asked = [v for k, v in seen if k == "decision_requested"]
@@ -71,14 +81,14 @@ def test_emitted_payloads_are_json_safe():
     import json
 
     seen: list[tuple[str, dict]] = []
-    CompiledProcess(to_be_net(), MockBackend(), verbose=False,
+    CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False,
                     emit=lambda k, v: seen.append((k, v))).run(SCENARIOS["out_of_warranty"])
     json.dumps(seen)  # must not raise
 
 
 def test_emit_is_optional():
     """The CLI and the tests run without an observer; that path must stay intact."""
-    result = CompiledProcess(to_be_net(), MockBackend(), verbose=False).run(
+    result = CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False).run(
         SCENARIOS["standard"]
     )
     assert result.completed
@@ -88,7 +98,7 @@ def test_emit_is_optional():
 
 def test_gate_is_called_only_for_human_in_loop_steps():
     calls: list[dict] = []
-    CompiledProcess(to_be_net(), MockBackend(), verbose=False,
+    CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False,
                     human_gate=lambda info: (calls.append(info), info["recommendation"])[1]
                     ).run(SCENARIOS["out_of_warranty"])
 
@@ -101,7 +111,7 @@ def test_micro_claim_never_reaches_a_gate():
     """An auto-settled claim is decided entirely by `auto` transitions, so
     nobody should be interrupted for it."""
     calls: list[dict] = []
-    CompiledProcess(to_be_net(), MockBackend(), verbose=False,
+    CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False,
                     human_gate=lambda info: (calls.append(info), info["recommendation"])[1]
                     ).run(SCENARIOS["micro"])
     assert calls == []
@@ -112,7 +122,7 @@ def test_human_override_is_recorded_and_audited():
     the agent. Approving an out-of-warranty claim violates N2 whoever does it."""
     seen: list[tuple[str, dict]] = []
     result = CompiledProcess(
-        to_be_net(), MockBackend(), verbose=False,
+        to_be_net(), ScriptedBackend(), verbose=False,
         emit=lambda k, v: seen.append((k, v)),
         human_gate=lambda _info: "t_approve",   # override the agent's "reject"
     ).run(SCENARIOS["out_of_warranty"])
@@ -127,7 +137,7 @@ def test_human_override_is_recorded_and_audited():
 
 
 def test_gate_falls_back_when_given_an_invalid_choice():
-    result = CompiledProcess(to_be_net(), MockBackend(), verbose=False,
+    result = CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False,
                              human_gate=lambda _i: "t_not_a_transition"
                              ).run(SCENARIOS["out_of_warranty"])
     assert result.decision_outcome == "rejected"  # the recommendation stood
@@ -137,10 +147,10 @@ def test_gate_falls_back_when_given_an_invalid_choice():
 def test_run_records_whether_a_human_was_really_in_the_loop():
     """Declaring a step `human_in_loop` in the net is not evidence that a person
     actually committed it."""
-    headless = CompiledProcess(to_be_net(), MockBackend(), verbose=False)
+    headless = CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False)
     assert headless.run(SCENARIOS["out_of_warranty"]).human_in_the_loop is False
 
-    gated = CompiledProcess(to_be_net(), MockBackend(), verbose=False,
+    gated = CompiledProcess(to_be_net(), ScriptedBackend(), verbose=False,
                             human_gate=lambda i: i["recommendation"])
     assert gated.run(SCENARIOS["out_of_warranty"]).human_in_the_loop is True
 
@@ -173,7 +183,7 @@ def test_event_envelope_never_shadows_the_kind(client):
 
 def test_events_are_contiguously_numbered_for_resumable_streaming(client):
     run = client.post("/api/runs", json={
-        "scenario": "standard", "backend": "mock", "human_in_the_loop": False,
+        "scenario": "standard", "backend": "ollama", "human_in_the_loop": False,
     }).json()
     snap = wait_for(client, run["run_id"], "done")
     assert [e["seq"] for e in snap["events"]] == list(range(len(snap["events"])))
@@ -181,7 +191,7 @@ def test_events_are_contiguously_numbered_for_resumable_streaming(client):
 
 def test_run_blocks_until_a_person_decides(client):
     run = client.post("/api/runs", json={
-        "scenario": "out_of_warranty", "backend": "mock", "human_in_the_loop": True,
+        "scenario": "out_of_warranty", "backend": "ollama", "human_in_the_loop": True,
     }).json()
     rid = run["run_id"]
     snap = wait_for(client, rid, "awaiting_human")
@@ -202,7 +212,7 @@ def test_run_blocks_until_a_person_decides(client):
 
 def test_decide_rejects_an_option_not_on_the_table(client):
     run = client.post("/api/runs", json={
-        "scenario": "out_of_warranty", "backend": "mock", "human_in_the_loop": True,
+        "scenario": "out_of_warranty", "backend": "ollama", "human_in_the_loop": True,
     }).json()
     rid = run["run_id"]
     wait_for(client, rid, "awaiting_human")
@@ -213,7 +223,7 @@ def test_decide_rejects_an_option_not_on_the_table(client):
 
 def test_decide_when_nothing_is_pending_is_a_conflict(client):
     run = client.post("/api/runs", json={
-        "scenario": "micro", "backend": "mock", "human_in_the_loop": True,
+        "scenario": "micro", "backend": "ollama", "human_in_the_loop": True,
     }).json()
     wait_for(client, run["run_id"], "done")
     assert client.post(f"/api/runs/{run['run_id']}/decide",

@@ -13,6 +13,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { api } from './api'
 import type {
   DecisionEntry,
+  ExecutorKind,
   TransitionActivity,
   PendingDecision,
   RunEvent,
@@ -56,16 +57,28 @@ export function useRun() {
     () => isRunning.value || status.value === 'awaiting_human',
   )
 
-  function markBusy(ids: string[]) {
+  function markBusy(dispatch: { id: string; executor?: ExecutorKind; llm_advises?: boolean }[]) {
     const next = { ...activity.value }
-    for (const id of ids) {
-      next[id] = { ...(next[id] ?? { fired: false, note: '', actor: '' }), busy: true }
+    for (const t of dispatch) {
+      next[t.id] = {
+        ...(next[t.id] ?? { fired: false, note: '', actor: '' }),
+        busy: true,
+        executor: t.executor,
+        llmAdvises: !!t.llm_advises,
+      }
     }
     activity.value = next
   }
 
   function markFired(id: string, note: string, actor: string) {
-    activity.value = { ...activity.value, [id]: { busy: false, fired: true, note, actor } }
+    const prev = activity.value[id]
+    activity.value = {
+      ...activity.value,
+      // `executor` comes from the dispatch event and is not repeated on the
+      // fired one; keep what we already know rather than dropping the badge
+      // the moment the step finishes.
+      [id]: { ...prev, busy: false, fired: true, note, actor },
+    }
   }
 
   function setMarking(next: Record<string, number>) {
@@ -100,7 +113,7 @@ export function useRun() {
       case 'round_started': {
         setMarking(d.marking ?? {})
         groundAtoms.value = d.ground_atoms ?? []
-        markBusy((d.dispatch ?? []).map((t: any) => t.id))
+        markBusy(d.dispatch ?? [])
         const step: StepEntry = {
           type: 'step',
           seq: event.seq,
@@ -111,6 +124,8 @@ export function useRun() {
             label: t.label,
             actor: t.actor,
             autonomy: t.autonomy,
+            executor: t.executor ?? 'deterministic',
+            llmAdvises: !!t.llm_advises,
             tools: t.tools ?? [],
             note: '',
             hours: t.hours,

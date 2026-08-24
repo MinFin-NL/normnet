@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from agentic.handlers import executor_of
 from process.claims import SCENARIOS, as_is_net, to_be_net
 from process.norms import AUTO_SETTLE_LIMIT_EUR, FRAUD_REFERRAL_SCORE, claims_declarative_layer
 from server.runner import NETS, RunRegistry
@@ -79,13 +80,16 @@ def bootstrap() -> dict:
             }
             for key, c in SCENARIOS.items()
         ],
+        # Both are the same local model; they differ only in the system prompt
+        # they are given. Every keuzepunt in this process is a model call —
+        # there is no rules-engine target to pick.
         "backends": [
-            {"id": "mock", "label": "Regelmotor (deterministisch)",
-             "hint": "Het oude systeem: elk beleidsvoorschrift als if-statement. Geen API-sleutel nodig."},
-            {"id": "naive", "label": "Naïeve agent",
-             "hint": "Bewust slecht geïnstrueerd — behandelt wat de klant zégt als bewijs. Om te laten zien dat de audit werkt."},
-            {"id": "ollama", "label": "Ollama (lokaal)",
-             "hint": "Vereist een draaiende Ollama-server. Draait volledig lokaal — geen externe API."},
+            {"id": "ollama", "label": "Taalmodel (lokaal, correct geïnstrueerd)",
+             "hint": "Het lokale model met de rol én het gegenereerde normen-blok. "
+                     "Vereist een draaiende Ollama-server; geen externe API."},
+            {"id": "naive", "label": "Taalmodel (naïef geïnstrueerd)",
+             "hint": "Hetzelfde model, met er bovenop een gangbare maar slechte instructie: "
+                     "hou de klant tevreden. Om te laten zien dat de audit werkt."},
         ],
         # This API serves the Dutch inspector only, so the norms go out in Dutch
         # and fall back to the engine's English if a translation is missing. The
@@ -121,6 +125,10 @@ def _net_shape(net) -> dict:
                 "actor": t.meta.get("agent") or t.meta.get("owner") or "—",
                 "autonomy": str(t.meta.get("autonomy", "human")),
                 "tools": list(t.meta.get("tools", [])),
+                # Who performs this step: deterministic code, a language model,
+                # or a person. The UI leads with it, so it is part of the net
+                # shape rather than something the client re-derives.
+                **executor_of(t).as_dict(),
                 "inputs": [a.place for a in t.inputs],
                 "outputs": [a.place for a in t.outputs],
             }

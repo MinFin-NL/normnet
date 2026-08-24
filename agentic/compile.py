@@ -329,7 +329,8 @@ class CompiledProcess:
                 {"id": t.id, "label": t.label, "actor": actor_of(t),
                  "autonomy": str(t.meta.get("autonomy", "human")),
                  "tools": list(t.meta.get("tools", [])),
-                 "hours": duration_hours(t)}
+                 "hours": duration_hours(t),
+                 **handlers.executor_of(t).as_dict()}
                 for t in step
             ],
             "concurrent": len(step) > 1,
