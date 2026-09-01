@@ -320,7 +320,7 @@ by design, since a container has no local Ollama and a laptop has no Azure key:
 | Provider | When it is used |
 |---|---|
 | `ollama` | A local model via `langchain-ollama`. Set `PETRI_OLLAMA_URL` (default `http://127.0.0.1:11434`) and optionally `PETRI_OLLAMA_MODEL` (default `mistral-small3.1:24b`). The model needs tool-calling support, which is what the structured `Judgement` output rides on — and enough capability to hold a numeric threshold: `mistral:latest` (7B) auto-settles a €189 claim against a €50 limit. |
-| `azure` | The Azure OpenAI deployment this project runs on in the ministry's tenant — the same model the invulhulp project uses. Selected whenever `AZURE_OPENAI_ENDPOINT` is set; see `.env.azure.example`. |
+| `azure` | The `gpt-5.5` deployment on the consolidated Foundry account (`aif-foundry-inno-d`) in the ministry's tenant. Selected whenever `AZURE_OPENAI_ENDPOINT` is set; see `.env.azure.example`. Authentication is Entra, not a key — the caller's identity needs the Foundry User role on that account. |
 
 **Model calls never leave the machine or the tenant they are configured for.**
 On a laptop that means Ollama; on the deployed inspector it means Azure OpenAI
@@ -388,8 +388,14 @@ execution layer, the model backends, and the inspector.
 
 ## Deploy
 
-The inspector runs on Azure Container Apps in `rg-normnet-inno-d`, alongside the
-invulhulp deployment and pointing at the same `gpt-5.3-chat` deployment.
+The inspector runs on Azure Container Apps in `rg-normnet-inno-d`, pointing at
+the `gpt-5.5` deployment on the shared Foundry account `aif-foundry-inno-d`
+(declared in `innovatieteam-infra/foundry`). It used to share invulhulp's
+`gpt-5.3-chat` deployment on `oai-invulhulp-inno-d`.
+
+The container app authenticates with its managed identity, which is granted the
+Foundry User role on the Foundry account — there is no API key anywhere in this
+project.
 
 ```
 rg-normnet-inno-d

@@ -7,10 +7,15 @@ pool:
   name: alz-p-mgmt-we-ccoe-pool
 
 variables:
-  # Supplies AZURE_SERVICE_CONNECTION, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY
-  # and the two ALLOWED_IP_* ranges. The OpenAI values point at the shared
-  # oai-invulhulp-inno-d resource — NormNet reuses that deployment rather than
-  # standing up a second one for the same model.
+  # Supplies AZURE_SERVICE_CONNECTION, AZURE_OPENAI_ENDPOINT and the two
+  # ALLOWED_IP_* ranges. There is no API key: the app authenticates with its
+  # managed identity, which holds Foundry User on the account.
+  #
+  # AZURE_OPENAI_ENDPOINT must point at the consolidated Foundry account
+  # (aif-foundry-inno-d), NOT the old shared oai-invulhulp-inno-d resource. That
+  # value lives in the variable group, so changing the deployment name here
+  # without changing it there points NormNet at a deployment that does not
+  # exist on the old account.
   - group: normnet-secrets
   - name: APP_IMAGE
     value: normnet
@@ -82,7 +87,7 @@ stages:
                 # both projects exercise one model rather than drifting apart.
                 ENV_VARS=(
                   "AZURE_OPENAI_ENDPOINT=secretref:openai-endpoint"
-                  "AZURE_OPENAI_DEPLOYMENT=gpt-5.3-chat"
+                  "AZURE_OPENAI_DEPLOYMENT=gpt-5.5"
                   "AZURE_OPENAI_API_VERSION=2025-04-01-preview"
                 )
 

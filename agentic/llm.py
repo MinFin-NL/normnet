@@ -17,12 +17,16 @@ Which model, and where it runs:
 ``azure``    Azure OpenAI, the hosted deployment this project runs on. Picked
              automatically when AZURE_OPENAI_ENDPOINT is set, which is how the
              container app is configured — a container has no local Ollama to
-             talk to. Reads the same variable names as the invulhulp backend:
+             talk to.
 
                  AZURE_OPENAI_ENDPOINT     resource endpoint (selects this backend)
-                 AZURE_OPENAI_API_KEY      API key
                  AZURE_OPENAI_DEPLOYMENT   deployment name (default below)
                  AZURE_OPENAI_API_VERSION  API version (default below)
+
+             There is no API key. Auth is Entra: the container app's managed
+             identity is granted Foundry User on the account, and _azure() below
+             exchanges that for a token. Nothing to rotate, nothing in a
+             variable group.
 
 And how it is prompted, which is the only difference between the two audit
 targets — same model, same net, same norms:
@@ -54,7 +58,7 @@ DEFAULT_OLLAMA_MODEL = "mistral-small3.1:24b"
 #: the model somewhere else on the network sets PETRI_OLLAMA_URL.
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 
-DEFAULT_AZURE_DEPLOYMENT = "gpt-5.3-chat"
+DEFAULT_AZURE_DEPLOYMENT = "gpt-5.5"
 DEFAULT_AZURE_API_VERSION = "2025-04-01-preview"
 
 
@@ -214,9 +218,11 @@ def _setup_help(exc: BaseException) -> str:
         deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", DEFAULT_AZURE_DEPLOYMENT)
         return (
             f"{head}\nAZURE_OPENAI_ENDPOINT is set, so the hosted deployment is "
-            f"the one in use. Check AZURE_OPENAI_API_KEY, and that deployment "
-            f"{deployment!r} exists at that endpoint (AZURE_OPENAI_DEPLOYMENT, "
-            f"AZURE_OPENAI_API_VERSION)."
+            f"the one in use. Auth is Entra, not a key: check that this identity "
+            f"has the Foundry User role on the account, that it can reach the "
+            f"endpoint at all (the account is private, so a caller outside the "
+            f"VNet cannot), and that deployment {deployment!r} exists there "
+            f"(AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_VERSION)."
         )
     url = os.environ.get("PETRI_OLLAMA_URL", DEFAULT_OLLAMA_URL)
     model = os.environ.get("PETRI_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
@@ -256,9 +262,9 @@ def _azure(preamble: str = "", suffix: str = "") -> Backend:
         api_version=os.environ.get("AZURE_OPENAI_API_VERSION", DEFAULT_AZURE_API_VERSION),
         # Deliberately unset, not a forgotten knob. A low temperature would suit
         # an audit trail — the same claim ought to decide the same way twice —
-        # but both deployments behind this project reject the parameter: the
-        # chat-latest model accepts only its default, reasoning models take none
-        # at all. Sending one fails every call, which is worse than sampling.
+        # but the deployments behind this project reject the parameter: the
+        # GPT-5 series accepts only its default, reasoning models take none at
+        # all. Sending one fails every call, which is worse than sampling.
         temperature=None,
     )
     return ChatBackend(model, f"azure:{deployment}{suffix}", preamble)
