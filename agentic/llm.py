@@ -241,12 +241,18 @@ def _ollama(preamble: str = "", suffix: str = "") -> Backend:
 
 def _azure(preamble: str = "", suffix: str = "") -> Backend:
     from langchain_openai import AzureChatOpenAI
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(),
+        "https://cognitiveservices.azure.com/.default",
+    )
 
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", DEFAULT_AZURE_DEPLOYMENT)
     model = AzureChatOpenAI(
         azure_deployment=deployment,
         azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
-        api_key=os.environ.get("AZURE_OPENAI_API_KEY", ""),
+        azure_ad_token_provider=token_provider,
         api_version=os.environ.get("AZURE_OPENAI_API_VERSION", DEFAULT_AZURE_API_VERSION),
         # Deliberately unset, not a forgotten knob. A low temperature would suit
         # an audit trail — the same claim ought to decide the same way twice —
