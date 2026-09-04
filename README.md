@@ -394,7 +394,7 @@ deployment on the shared Foundry account `aif-foundry-inno-d` (declared in
 `innovatieteam-infra/foundry`). It used to share invulhulp's `gpt-5.3-chat`
 deployment on `oai-invulhulp-inno-d`.
 
-The container app authenticates with its managed identity, which is granted the
+The container app authenticates with a managed identity, which is granted the
 Foundry User role on the Foundry account and AcrPull on the registry — there is
 no API key or registry password anywhere in this project.
 
@@ -405,6 +405,9 @@ rg-platform-inno-d
 
 rg-foundation-inno-d
 └── acrfoundationinnod    the shared registry — not ours either
+
+rg-normnet-inno-d
+└── id-normnet-inno-d     the identity the app runs as
 ```
 
 One container, because the API already serves the built frontend; see
@@ -430,16 +433,22 @@ unreachable from this environment no matter which resource group it sits in,
 which is why NormNet pushes to a registry it does not own rather than keeping
 a Basic one of its own.
 
-Two things do not follow the app and have to be granted by hand:
+The identity is user-assigned and lives in `rg-normnet-inno-d`, apart from the
+app it belongs to. A system-assigned identity would be a new principal every
+time the app is recreated — a different resource group is enough to do it — and
+both of its grants would have to be reissued before the app could so much as
+pull its own image. This one survives all of that.
 
-- **AcrPull on `acrfoundationinnod`** and **Foundry User on
-  `aif-foundry-inno-d`**, both for the app's managed identity. A recreated app
-  gets a new object ID, so both grants have to be reissued; the deploy prints
-  the object ID for exactly this reason. Until AcrPull exists, the first
-  revision of a new app cannot pull its image at all.
-- **AcrPush on `acrfoundationinnod`** for the pipeline's service connection,
-  which is what the build stage authenticates as. The registry has its admin
-  user disabled.
+The pipeline creates the identity and issues both grants itself, as the service
+connection, so that nobody files them by hand. That means the service connection
+needs, once:
+
+- **AcrPush on `acrfoundationinnod`**, to push the image. The registry has its
+  admin user disabled, so the build authenticates as the service connection.
+- **permission to assign roles** on the registry and on the Foundry account. If
+  it does not have this, the deploy warns rather than fails, and the two grants
+  have to be made once by someone who does — after which every later run finds
+  them already there.
 
 The app is only reachable from the network: the platform environment is
 internal, so its ingress has a private address and there is no public
@@ -447,7 +456,8 @@ allow-list any more. The app has no login of its own, so reaching it is the
 only thing standing in front of it. Its FQDN is printed at the end of each
 deploy.
 
-Nothing deletes the old resources for you:
+Nothing deletes the old resources for you. `rg-normnet-inno-d` itself stays —
+the identity lives there — but everything else in it is dead weight:
 
 ```
 az containerapp delete -n ca-normnet-inno-d -g rg-normnet-inno-d --yes
@@ -458,6 +468,7 @@ az acr delete -n acrnormnetinnod -g rg-normnet-inno-d --yes
 It scales `min=max=1` deliberately: a run lives in one replica's memory and its
 SSE stream is pinned to that replica, so a second replica would strand clients
 on a process that never saw their run.
+
 ## Extending it
 
 - **Another process** — write a net in `process/`, add handlers keyed by

@@ -7,15 +7,11 @@ pool:
   name: alz-p-mgmt-we-ccoe-pool
 
 variables:
-  # AZURE_OPENAI_ENDPOINT must be aif-foundry-inno-d, not the old
-  # oai-invulhulp-inno-d, or the deployment below does not exist.
   - group: normnet-secrets
   - name: APP_IMAGE
     value: normnet
   - name: APP
     value: ca-normnet-inno-d
-  # Neither is ours. Both are shared, and only a registry with a private
-  # endpoint can be pulled from this environment. See README.
   - name: RESOURCE_GROUP
     value: rg-platform-inno-d
   - name: CONTAINER_APP_ENV
@@ -24,6 +20,16 @@ variables:
     value: rg-platform-inno-d
   - name: ACR_LOGIN_SERVER
     value: acrfoundationinnod.azurecr.io
+  - name: IDENTITY
+    value: id-normnet-inno-d
+  - name: IDENTITY_RESOURCE_GROUP
+    value: rg-normnet-inno-d
+  - name: FOUNDRY_ACCOUNT
+    value: aif-foundry-inno-d
+  - name: FOUNDRY_RESOURCE_GROUP
+    value: rg-foundry-inno-d
+  - name: LOCATION
+    value: westeurope
 
 stages:
   - stage: Build
@@ -99,6 +105,63 @@ stages:
                 echo "##vso[task.setvariable variable=ENV_ID]$ENV_ID"
 
           - task: AzureCLI@2
+            displayName: Ensure the app identity
+            env:
+              IDENTITY: $(IDENTITY)
+              IDENTITY_RESOURCE_GROUP: $(IDENTITY_RESOURCE_GROUP)
+              LOCATION: $(LOCATION)
+              ACR_LOGIN_SERVER: $(ACR_LOGIN_SERVER)
+              FOUNDRY_ACCOUNT: $(FOUNDRY_ACCOUNT)
+              FOUNDRY_RESOURCE_GROUP: $(FOUNDRY_RESOURCE_GROUP)
+            inputs:
+              azureSubscription: $(AZURE_SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                # User-assigned, not system-assigned: a system identity is a new
+                # principal every time the app is recreated, and every grant it
+                # holds has to be reissued. This one outlives the app.
+                az identity create \
+                  --name "$IDENTITY" \
+                  --resource-group "$IDENTITY_RESOURCE_GROUP" \
+                  --location "$LOCATION" \
+                  --output none
+
+                read -r IDENTITY_ID IDENTITY_CLIENT_ID IDENTITY_PRINCIPAL_ID <<< "$(az identity show \
+                  --name "$IDENTITY" --resource-group "$IDENTITY_RESOURCE_GROUP" \
+                  --query "[id, clientId, principalId]" -o tsv)"
+
+                # Granted by the pipeline, as the service connection, so that no
+                # one has to file them by hand. Both are one-off in practice:
+                # the identity is stable, so a second run finds them present.
+                grant() {
+                  if az role assignment create \
+                    --assignee-object-id "$IDENTITY_PRINCIPAL_ID" \
+                    --assignee-principal-type ServicePrincipal \
+                    --role "$1" \
+                    --scope "$2" \
+                    --output none 2>/dev/null; then
+                    echo "Granted $1."
+                  else
+                    echo "##[warning]$1 was not granted: it is already there, or this"
+                    echo "##[warning]service connection cannot assign roles on $2."
+                  fi
+                }
+
+                grant AcrPull \
+                  "$(az acr show --name "${ACR_LOGIN_SERVER%%.*}" --query id -o tsv)"
+                grant "Foundry User" \
+                  "$(az cognitiveservices account show \
+                       --name "$FOUNDRY_ACCOUNT" \
+                       --resource-group "$FOUNDRY_RESOURCE_GROUP" \
+                       --query id -o tsv)"
+
+                echo "##vso[task.setvariable variable=IDENTITY_ID]$IDENTITY_ID"
+                echo "##vso[task.setvariable variable=IDENTITY_CLIENT_ID]$IDENTITY_CLIENT_ID"
+
+          - task: AzureCLI@2
             displayName: Deploy container app
             env:
               IMAGE_TAG: $(Build.SourceVersion)
@@ -107,6 +170,8 @@ stages:
               RESOURCE_GROUP: $(RESOURCE_GROUP)
               ACR_LOGIN_SERVER: $(ACR_LOGIN_SERVER)
               ENV_ID: $(ENV_ID)
+              IDENTITY_ID: $(IDENTITY_ID)
+              IDENTITY_CLIENT_ID: $(IDENTITY_CLIENT_ID)
               AZURE_OPENAI_ENDPOINT: $(AZURE_OPENAI_ENDPOINT)
             inputs:
               azureSubscription: $(AZURE_SERVICE_CONNECTION)
@@ -116,10 +181,13 @@ stages:
                 set -euo pipefail
 
                 # Same deployment and API version as the invulhulp backend.
+                # AZURE_CLIENT_ID is what points DefaultAzureCredential at the
+                # user-assigned identity rather than at nothing.
                 ENV_VARS=(
                   "AZURE_OPENAI_ENDPOINT=secretref:openai-endpoint"
                   "AZURE_OPENAI_DEPLOYMENT=gpt-5.5"
                   "AZURE_OPENAI_API_VERSION=2025-04-01-preview"
+                  "AZURE_CLIENT_ID=$IDENTITY_CLIENT_ID"
                 )
 
                 if az containerapp show --name "$APP" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
@@ -130,11 +198,17 @@ stages:
                       "openai-endpoint=${AZURE_OPENAI_ENDPOINT}" \
                     --output none
 
+                  az containerapp identity assign \
+                    --name "$APP" \
+                    --resource-group "$RESOURCE_GROUP" \
+                    --user-assigned "$IDENTITY_ID" \
+                    --output none
+
                   az containerapp registry set \
                     --name "$APP" \
                     --resource-group "$RESOURCE_GROUP" \
                     --server "$ACR_LOGIN_SERVER" \
-                    --identity system \
+                    --identity "$IDENTITY_ID" \
                     --output none
 
                   az containerapp update \
@@ -153,10 +227,10 @@ stages:
                     --environment "$ENV_ID" \
                     --image "$ACR_LOGIN_SERVER/$APP_IMAGE:$IMAGE_TAG" \
                     --registry-server "$ACR_LOGIN_SERVER" \
-                    --registry-identity system \
+                    --registry-identity "$IDENTITY_ID" \
                     --ingress external \
                     --target-port 8000 \
-                    --system-assigned \
+                    --user-assigned "$IDENTITY_ID" \
                     --secrets \
                       "openai-endpoint=${AZURE_OPENAI_ENDPOINT}" \
                     --env-vars "${ENV_VARS[@]}" \
@@ -164,21 +238,6 @@ stages:
                     --min-replicas 1 --max-replicas 1 \
                     --output none
                 fi
-
-                PRINCIPAL_ID=$(az containerapp identity show \
-                  --name "$APP" --resource-group "$RESOURCE_GROUP" \
-                  --query principalId -o tsv 2>/dev/null || true)
-
-                if [ -z "$PRINCIPAL_ID" ] || [ "$PRINCIPAL_ID" = "null" ]; then
-                  PRINCIPAL_ID=$(az containerapp identity assign \
-                    --name "$APP" --resource-group "$RESOURCE_GROUP" \
-                    --system-assigned \
-                    --query principalId -o tsv)
-                fi
-
-                # A recreated app gets a new object ID; grants do not follow.
-                echo "Managed identity object ID: $PRINCIPAL_ID"
-                echo "Needs AcrPull on acrfoundationinnod and Foundry User on aif-foundry-inno-d."
 
                 echo "Ingress FQDN: $(az containerapp show \
                   --name "$APP" --resource-group "$RESOURCE_GROUP" \
