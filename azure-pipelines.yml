@@ -119,6 +119,9 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
+                # Git Bash rewrites arguments starting with "/" into Windows
+                # paths, mangling every resource ID and scope below.
+                export MSYS_NO_PATHCONV=1
 
                 # User-assigned, not system-assigned: a system identity is a new
                 # principal every time the app is recreated, and every grant it
@@ -179,6 +182,7 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
+                export MSYS_NO_PATHCONV=1
 
                 # Same deployment and API version as the invulhulp backend.
                 # AZURE_CLIENT_ID is what points DefaultAzureCredential at the
