@@ -7,27 +7,25 @@ pool:
   name: alz-p-mgmt-we-ccoe-pool
 
 variables:
-  # Supplies AZURE_SERVICE_CONNECTION, AZURE_OPENAI_ENDPOINT and the two
-  # ALLOWED_IP_* ranges. There is no API key: the app authenticates with its
-  # managed identity, which holds Foundry User on the account.
-  #
-  # AZURE_OPENAI_ENDPOINT must point at the consolidated Foundry account
-  # (aif-foundry-inno-d), NOT the old shared oai-invulhulp-inno-d resource. That
-  # value lives in the variable group, so changing the deployment name here
-  # without changing it there points NormNet at a deployment that does not
-  # exist on the old account.
+  # Supplies AZURE_SERVICE_CONNECTION and AZURE_OPENAI_ENDPOINT. There is no API
+  # key: the app authenticates with its managed identity, which holds Foundry
+  # User on the account. AZURE_OPENAI_ENDPOINT must point at aif-foundry-inno-d,
+  # not the old oai-invulhulp-inno-d, or the deployment below does not exist.
   - group: normnet-secrets
   - name: APP_IMAGE
     value: normnet
-  - name: RESOURCE_GROUP
-    value: rg-normnet-inno-d
-  - name: CONTAINER_APP_ENV
-    value: cae-normnet-inno-d
   - name: APP
     value: ca-normnet-inno-d
-  # One app, not two: the API serves the built SPA itself (see Dockerfile).
-  # Runs are held in memory and die with the revision, so there is no storage
-  # account here either — nothing in this demo outlives a restart.
+  # The environment is shared and owned by the platform team; this pipeline
+  # asserts it, never creates it. Only the registry is still ours.
+  - name: RESOURCE_GROUP
+    value: rg-platform-inno-d
+  - name: CONTAINER_APP_ENV
+    value: cae-platform-inno-d
+  - name: CONTAINER_APP_ENV_RESOURCE_GROUP
+    value: rg-platform-inno-d
+  - name: ACR_RESOURCE_GROUP
+    value: rg-normnet-inno-d
 
 stages:
   - stage: Build
@@ -41,14 +39,14 @@ stages:
             env:
               IMAGE_TAG: $(Build.SourceVersion)
               APP_IMAGE: $(APP_IMAGE)
-              RESOURCE_GROUP: $(RESOURCE_GROUP)
+              ACR_RESOURCE_GROUP: $(ACR_RESOURCE_GROUP)
             inputs:
               azureSubscription: $(AZURE_SERVICE_CONNECTION)
               scriptType: bash
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                ACR_LOGIN_SERVER=$(az acr list --resource-group "$RESOURCE_GROUP" --query "[0].loginServer" -o tsv)
+                ACR_LOGIN_SERVER=$(az acr list --resource-group "$ACR_RESOURCE_GROUP" --query "[0].loginServer" -o tsv)
                 az acr login --name "${ACR_LOGIN_SERVER%%.*}"
                 docker build \
                   -t "$ACR_LOGIN_SERVER/$APP_IMAGE:$IMAGE_TAG" \
@@ -64,13 +62,55 @@ stages:
         displayName: Deploy the app
         steps:
           - task: AzureCLI@2
+            displayName: Resolve the shared environment
+            env:
+              CONTAINER_APP_ENV: $(CONTAINER_APP_ENV)
+              CONTAINER_APP_ENV_RESOURCE_GROUP: $(CONTAINER_APP_ENV_RESOURCE_GROUP)
+            inputs:
+              azureSubscription: $(AZURE_SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                ENV_ID=$(az containerapp env show \
+                  --name "$CONTAINER_APP_ENV" \
+                  --resource-group "$CONTAINER_APP_ENV_RESOURCE_GROUP" \
+                  --query id -o tsv 2>/dev/null || true)
+
+                if [ -z "$ENV_ID" ]; then
+                  echo "##[error]$CONTAINER_APP_ENV was not found in $CONTAINER_APP_ENV_RESOURCE_GROUP."
+                  echo "##[error]This pipeline does not create an environment. Ask the platform team,"
+                  echo "##[error]or point CONTAINER_APP_ENV at whatever replaced it."
+                  exit 1
+                fi
+
+                # Without VNet integration the app cannot reach the Foundry
+                # private endpoint and every model call 403s while the
+                # deployment still looks healthy. Fail here instead.
+                SUBNET_ID=$(az containerapp env show \
+                  --name "$CONTAINER_APP_ENV" \
+                  --resource-group "$CONTAINER_APP_ENV_RESOURCE_GROUP" \
+                  --query "properties.vnetConfiguration.infrastructureSubnetId" -o tsv)
+
+                if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "null" ]; then
+                  echo "##[error]$CONTAINER_APP_ENV has no VNet integration, so Foundry is unreachable"
+                  echo "##[error]from it. That cannot be fixed in place; the environment has to be"
+                  echo "##[error]replaced by the platform team."
+                  exit 1
+                fi
+
+                echo "##vso[task.setvariable variable=ENV_ID]$ENV_ID"
+
+          - task: AzureCLI@2
             displayName: Deploy container app
             env:
               IMAGE_TAG: $(Build.SourceVersion)
               APP_IMAGE: $(APP_IMAGE)
               APP: $(APP)
               RESOURCE_GROUP: $(RESOURCE_GROUP)
-              CONTAINER_APP_ENV: $(CONTAINER_APP_ENV)
+              ACR_RESOURCE_GROUP: $(ACR_RESOURCE_GROUP)
+              ENV_ID: $(ENV_ID)
               AZURE_OPENAI_ENDPOINT: $(AZURE_OPENAI_ENDPOINT)
             inputs:
               azureSubscription: $(AZURE_SERVICE_CONNECTION)
@@ -78,13 +118,12 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                ACR_LOGIN_SERVER=$(az acr list --resource-group "$RESOURCE_GROUP" --query "[0].loginServer" -o tsv)
+                ACR_LOGIN_SERVER=$(az acr list --resource-group "$ACR_RESOURCE_GROUP" --query "[0].loginServer" -o tsv)
                 ACR_NAME="${ACR_LOGIN_SERVER%%.*}"
                 ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
                 ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
 
-                # Same deployment and API version as the invulhulp backend, so
-                # both projects exercise one model rather than drifting apart.
+                # Same deployment and API version as the invulhulp backend.
                 ENV_VARS=(
                   "AZURE_OPENAI_ENDPOINT=secretref:openai-endpoint"
                   "AZURE_OPENAI_DEPLOYMENT=gpt-5.5"
@@ -108,16 +147,20 @@ stages:
                     --set-env-vars "${ENV_VARS[@]}" \
                     --output none
                 else
+                  # The environment is internal, so "external" here means
+                  # reachable from the network, not from the internet — which is
+                  # also why there is no IP allow-list any more. See README.
                   az containerapp create \
                     --name "$APP" \
                     --resource-group "$RESOURCE_GROUP" \
-                    --environment "$CONTAINER_APP_ENV" \
+                    --environment "$ENV_ID" \
                     --image "$ACR_LOGIN_SERVER/$APP_IMAGE:$IMAGE_TAG" \
                     --registry-server "$ACR_LOGIN_SERVER" \
                     --registry-username "$ACR_USER" \
                     --registry-password "$ACR_PASS" \
                     --ingress external \
                     --target-port 8000 \
+                    --system-assigned \
                     --secrets \
                       "openai-endpoint=${AZURE_OPENAI_ENDPOINT}" \
                     --env-vars "${ENV_VARS[@]}" \
@@ -126,35 +169,25 @@ stages:
                     --output none
                 fi
 
-                # A run lives in the memory of one replica and its /stream
-                # connection is pinned to it, so scaling out would strand
-                # clients on a replica that never saw their run. Hence
-                # min=max=1 above; keep it that way until runs are shared state.
+                PRINCIPAL_ID=$(az containerapp identity show \
+                  --name "$APP" --resource-group "$RESOURCE_GROUP" \
+                  --query principalId -o tsv 2>/dev/null || true)
 
-          - task: AzureCLI@2
-            displayName: Apply firewall rules
-            env:
-              APP: $(APP)
-              RESOURCE_GROUP: $(RESOURCE_GROUP)
-              ALLOWED_IP_1: $(ALLOWED_IP_1)
-              ALLOWED_IP_2: $(ALLOWED_IP_2)
-            inputs:
-              azureSubscription: $(AZURE_SERVICE_CONNECTION)
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -euo pipefail
-                az containerapp ingress access-restriction set \
-                  --name "$APP" \
-                  --resource-group "$RESOURCE_GROUP" \
-                  --rule-name "DWR Next werkplekken" \
-                  --ip-address "$ALLOWED_IP_1" \
-                  --action Allow \
-                  --output none
-                az containerapp ingress access-restriction set \
-                  --name "$APP" \
-                  --resource-group "$RESOURCE_GROUP" \
-                  --rule-name "ITS" \
-                  --ip-address "$ALLOWED_IP_2" \
-                  --action Allow \
-                  --output none
+                if [ -z "$PRINCIPAL_ID" ] || [ "$PRINCIPAL_ID" = "null" ]; then
+                  PRINCIPAL_ID=$(az containerapp identity assign \
+                    --name "$APP" --resource-group "$RESOURCE_GROUP" \
+                    --system-assigned \
+                    --query principalId -o tsv)
+                fi
+
+                # A recreated app gets a new object ID, and the Foundry User
+                # grant names the old one. Printed because the symptom otherwise
+                # is a 401 against a role assignment that still looks correct.
+                echo "Managed identity object ID: $PRINCIPAL_ID"
+
+                echo "Ingress FQDN: $(az containerapp show \
+                  --name "$APP" --resource-group "$RESOURCE_GROUP" \
+                  --query "properties.configuration.ingress.fqdn" -o tsv)"
+
+                # A run lives in one replica's memory and its /stream connection
+                # is pinned to it, so a second replica would strand clients.

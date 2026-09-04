@@ -388,33 +388,61 @@ execution layer, the model backends, and the inspector.
 
 ## Deploy
 
-The inspector runs on Azure Container Apps in `rg-normnet-inno-d`, pointing at
-the `gpt-5.5` deployment on the shared Foundry account `aif-foundry-inno-d`
-(declared in `innovatieteam-infra/foundry`). It used to share invulhulp's
-`gpt-5.3-chat` deployment on `oai-invulhulp-inno-d`.
+The inspector runs on Azure Container Apps in the shared platform environment
+`cae-platform-inno-d` (`rg-platform-inno-d`), pointing at the `gpt-5.5`
+deployment on the shared Foundry account `aif-foundry-inno-d` (declared in
+`innovatieteam-infra/foundry`). It used to share invulhulp's `gpt-5.3-chat`
+deployment on `oai-invulhulp-inno-d`.
 
 The container app authenticates with its managed identity, which is granted the
 Foundry User role on the Foundry account — there is no API key anywhere in this
 project.
 
 ```
-rg-normnet-inno-d
-├── acrnormnetinnod       the image registry
-├── cae-normnet-inno-d    the Container Apps environment
+rg-platform-inno-d
+├── cae-platform-inno-d   the shared Container Apps environment — not ours
 └── ca-normnet-inno-d     the app — API and SPA in one container
+
+rg-normnet-inno-d
+└── acrnormnetinnod       the image registry
 ```
 
 One container, because the API already serves the built frontend; see
 `Dockerfile`. `azure-pipelines.yml` builds and deploys it on a push to `main`,
-reading endpoint, key and the two allowed IP ranges from the `normnet-secrets`
-variable group.
+reading the endpoint from the `normnet-secrets` variable group.
 
-Ingress is restricted to the ministry's own IP ranges — the app itself has no
-login, so that restriction is the only thing standing in front of it. Anyone
-who can reach it can start runs against the model. It scales `min=max=1`
-deliberately: a run lives in one replica's memory and its SSE stream is pinned
-to that replica, so a second replica would strand clients on a process that
-never saw their run.
+NormNet used to own an environment of its own, `cae-normnet-inno-d`. It had no
+VNet integration, and the Foundry account has public network access disabled, so
+its private endpoint is the only data path to it: every model call came back 403
+("fout in de backend (PermissionDeniedError); standaardkeuze genomen"). An
+environment's VNet is fixed at creation, so that one could not be converted. The
+platform environment is already integrated with the landing-zone VNet that holds
+the Foundry private endpoint, which is what makes the calls work.
+
+Two consequences of moving, both of which need a hand outside this repository:
+
+- **The app is only reachable from the network.** The platform environment is
+  internal, so its ingress has a private address and there is no public
+  allow-list any more. The app has no login of its own, so reaching it is the
+  only thing standing in front of it — anyone who can, can start runs against
+  the model. Its FQDN is on the environment's own domain and is printed at the
+  end of each deploy.
+- **The managed identity is a new one.** An app in another resource group is a
+  different resource, so it gets a new object ID and the Foundry User grant has
+  to be reissued for it. The deploy prints the object ID for exactly this
+  reason; the old grant will still look correct in the portal while every call
+  returns 401.
+
+The old environment and app are left in place — nothing deletes them for you:
+
+```
+az containerapp delete -n ca-normnet-inno-d -g rg-normnet-inno-d --yes
+az containerapp env delete -n cae-normnet-inno-d -g rg-normnet-inno-d --yes
+```
+
+It scales `min=max=1` deliberately: a run lives in one replica's memory and its
+SSE stream is pinned to that replica, so a second replica would strand clients
+on a process that never saw their run.
 
 ## Extending it
 
