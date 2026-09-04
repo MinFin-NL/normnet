@@ -395,55 +395,69 @@ deployment on the shared Foundry account `aif-foundry-inno-d` (declared in
 deployment on `oai-invulhulp-inno-d`.
 
 The container app authenticates with its managed identity, which is granted the
-Foundry User role on the Foundry account — there is no API key anywhere in this
-project.
+Foundry User role on the Foundry account and AcrPull on the registry — there is
+no API key or registry password anywhere in this project.
 
 ```
 rg-platform-inno-d
 ├── cae-platform-inno-d   the shared Container Apps environment — not ours
 └── ca-normnet-inno-d     the app — API and SPA in one container
 
-rg-normnet-inno-d
-└── acrnormnetinnod       the image registry
+rg-foundation-inno-d
+└── acrfoundationinnod    the shared registry — not ours either
 ```
 
 One container, because the API already serves the built frontend; see
 `Dockerfile`. `azure-pipelines.yml` builds and deploys it on a push to `main`,
 reading the endpoint from the `normnet-secrets` variable group.
 
-NormNet used to own an environment of its own, `cae-normnet-inno-d`. It had no
-VNet integration, and the Foundry account has public network access disabled, so
-its private endpoint is the only data path to it: every model call came back 403
-("fout in de backend (PermissionDeniedError); standaardkeuze genomen"). An
-environment's VNet is fixed at creation, so that one could not be converted. The
-platform environment is already integrated with the landing-zone VNet that holds
-the Foundry private endpoint, which is what makes the calls work.
+NormNet used to own all of this: an environment `cae-normnet-inno-d` and a
+registry `acrnormnetinnod`, both in `rg-normnet-inno-d`. Neither works here.
 
-Two consequences of moving, both of which need a hand outside this repository:
+The environment had no VNet integration, and the Foundry account has public
+network access disabled, so its private endpoint is the only data path to it:
+every model call came back 403 ("fout in de backend (PermissionDeniedError);
+standaardkeuze genomen"). An environment's VNet is fixed at creation, so that
+one could not be converted.
 
-- **The app is only reachable from the network.** The platform environment is
-  internal, so its ingress has a private address and there is no public
-  allow-list any more. The app has no login of its own, so reaching it is the
-  only thing standing in front of it — anyone who can, can start runs against
-  the model. Its FQDN is on the environment's own domain and is printed at the
-  end of each deploy.
-- **The managed identity is a new one.** An app in another resource group is a
-  different resource, so it gets a new object ID and the Foundry User grant has
-  to be reissued for it. The deploy prints the object ID for exactly this
-  reason; the old grant will still look correct in the portal while every call
-  returns 401.
+The registry fails for the mirror-image reason. Outbound traffic from the
+platform environment is filtered — Microsoft endpoints resolve and connect,
+everything else is reset mid-handshake, which surfaces as
+`Get "https://<registry>/v2/": EOF` when a revision tries to pull. Docker Hub
+fails the same way. What makes `acrfoundationinnod` work is its private
+endpoint: the pull never leaves the network. A registry without one is
+unreachable from this environment no matter which resource group it sits in,
+which is why NormNet pushes to a registry it does not own rather than keeping
+a Basic one of its own.
 
-The old environment and app are left in place — nothing deletes them for you:
+Two things do not follow the app and have to be granted by hand:
+
+- **AcrPull on `acrfoundationinnod`** and **Foundry User on
+  `aif-foundry-inno-d`**, both for the app's managed identity. A recreated app
+  gets a new object ID, so both grants have to be reissued; the deploy prints
+  the object ID for exactly this reason. Until AcrPull exists, the first
+  revision of a new app cannot pull its image at all.
+- **AcrPush on `acrfoundationinnod`** for the pipeline's service connection,
+  which is what the build stage authenticates as. The registry has its admin
+  user disabled.
+
+The app is only reachable from the network: the platform environment is
+internal, so its ingress has a private address and there is no public
+allow-list any more. The app has no login of its own, so reaching it is the
+only thing standing in front of it. Its FQDN is printed at the end of each
+deploy.
+
+Nothing deletes the old resources for you:
 
 ```
 az containerapp delete -n ca-normnet-inno-d -g rg-normnet-inno-d --yes
 az containerapp env delete -n cae-normnet-inno-d -g rg-normnet-inno-d --yes
+az acr delete -n acrnormnetinnod -g rg-normnet-inno-d --yes
 ```
 
 It scales `min=max=1` deliberately: a run lives in one replica's memory and its
 SSE stream is pinned to that replica, so a second replica would strand clients
 on a process that never saw their run.
-
 ## Extending it
 
 - **Another process** — write a net in `process/`, add handlers keyed by
