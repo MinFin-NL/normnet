@@ -38,4 +38,12 @@ COPY --from=web /app/frontend/dist ./frontend/dist
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# --no-sync is load-bearing. Plain `uv run` re-syncs the environment before it
+# executes, which pulls the dev group back in -- the pytest tree that
+# `uv sync --no-dev` above deliberately left out -- and then tries to fetch it
+# from PyPI at container start. There is no route to PyPI from
+# cae-platform-inno-d: outbound is filtered to Microsoft endpoints, so the
+# download fails with "tls handshake eof", uv gives up, and the process exits 1
+# before uvicorn ever binds. --no-sync pins the container to the environment
+# the image was built with and takes the network out of startup entirely.
+CMD ["uv", "run", "--no-sync", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
