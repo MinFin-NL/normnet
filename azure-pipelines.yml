@@ -19,7 +19,7 @@ variables:
   - name: CONTAINER_APP_ENV_RESOURCE_GROUP
     value: rg-platform-inno-d
   - name: ACR_LOGIN_SERVER
-    value: acrfoundationinnod.azurecr.io
+    value: acrplatforminnod.azurecr.io
   - name: IDENTITY
     value: id-normnet-inno-d
   - name: IDENTITY_RESOURCE_GROUP
@@ -119,9 +119,6 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                # Git Bash rewrites arguments starting with "/" into Windows
-                # paths, mangling every resource ID and scope below.
-                export MSYS_NO_PATHCONV=1
 
                 # User-assigned, not system-assigned: a system identity is a new
                 # principal every time the app is recreated, and every grant it
@@ -182,7 +179,6 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                export MSYS_NO_PATHCONV=1
 
                 # Same deployment and API version as the invulhulp backend.
                 # AZURE_CLIENT_ID is what points DefaultAzureCredential at the
@@ -194,7 +190,20 @@ stages:
                   "AZURE_CLIENT_ID=$IDENTITY_CLIENT_ID"
                 )
 
-                if az containerapp show --name "$APP" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+                APP_STATE=$(az containerapp show \
+                  --name "$APP" --resource-group "$RESOURCE_GROUP" \
+                  --query properties.provisioningState -o tsv 2>/dev/null || true)
+
+                # An app whose last deploy failed refuses every later update
+                # with ResourceNotProvisioned, so one bad revision would wedge
+                # this pipeline permanently. Replacing it is the only way out.
+                if [ "$APP_STATE" = "Failed" ]; then
+                  az containerapp delete \
+                    --name "$APP" --resource-group "$RESOURCE_GROUP" --yes --output none
+                  APP_STATE=""
+                fi
+
+                if [ -n "$APP_STATE" ]; then
                   az containerapp secret set \
                     --name "$APP" \
                     --resource-group "$RESOURCE_GROUP" \

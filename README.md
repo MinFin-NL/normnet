@@ -401,10 +401,8 @@ no API key or registry password anywhere in this project.
 ```
 rg-platform-inno-d
 ├── cae-platform-inno-d   the shared Container Apps environment — not ours
+├── acrplatforminnod      the shared registry — not ours either
 └── ca-normnet-inno-d     the app — API and SPA in one container
-
-rg-foundation-inno-d
-└── acrfoundationinnod    the shared registry — not ours either
 
 rg-normnet-inno-d
 └── id-normnet-inno-d     the identity the app runs as
@@ -427,11 +425,24 @@ The registry fails for the mirror-image reason. Outbound traffic from the
 platform environment is filtered — Microsoft endpoints resolve and connect,
 everything else is reset mid-handshake, which surfaces as
 `Get "https://<registry>/v2/": EOF` when a revision tries to pull. Docker Hub
-fails the same way. What makes `acrfoundationinnod` work is its private
-endpoint: the pull never leaves the network. A registry without one is
-unreachable from this environment no matter which resource group it sits in,
-which is why NormNet pushes to a registry it does not own rather than keeping
-a Basic one of its own.
+fails the same way, and so does every public registry, `acrnormnetinnod`
+included.
+
+A private endpoint is the way round that — but it has to be in the SAME VNet
+as the environment, and that is the part that is easy to get wrong.
+`acrfoundationinnod` looks like the answer and is not: its endpoint sits in
+lz-01, the two landing-zone VNets peer only to the vWAN hub and not to each
+other, so the pull does not succeed, it just fails differently.
+
+```
+Post "https://acrfoundationinnod.azurecr.io/oauth2/exchange":
+dial tcp 10.159.133.117:443: i/o timeout
+```
+
+`acrplatforminnod` is the one that works. It lives in `rg-platform-inno-d`
+next to the environment and its private endpoint is in lz-02, one subnet away,
+so the pull never leaves the VNet. That is why NormNet pushes to a registry it
+does not own rather than keeping a Basic one of its own.
 
 The identity is user-assigned and lives in `rg-normnet-inno-d`, apart from the
 app it belongs to. A system-assigned identity would be a new principal every
@@ -443,7 +454,7 @@ The pipeline creates the identity and issues both grants itself, as the service
 connection, so that nobody files them by hand. That means the service connection
 needs, once:
 
-- **AcrPush on `acrfoundationinnod`**, to push the image. The registry has its
+- **AcrPush on `acrplatforminnod`**, to push the image. The registry has its
   admin user disabled, so the build authenticates as the service connection.
 - **permission to assign roles** on the registry and on the Foundry account. If
   it does not have this, the deploy warns rather than fails, and the two grants
